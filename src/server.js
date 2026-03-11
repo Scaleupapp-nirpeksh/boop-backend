@@ -5,6 +5,7 @@ const logger = require('./utils/logger');
 const { connectDB, closeDB } = require('./config/database');
 const { connectRedis, closeRedis } = require('./config/redis');
 const { initializeQueues, registerProcessors, closeQueues } = require('./config/queue');
+const { initializeCronJobs } = require('./config/cron');
 const app = require('./app');
 const socketManager = require('./config/socket');
 
@@ -32,7 +33,14 @@ const startServer = async () => {
       logger.warn('Bull queue initialization failed (non-fatal):', error.message);
     }
 
-    // 4. Create HTTP server from Express app
+    // 4. Initialize cron jobs
+    try {
+      initializeCronJobs();
+    } catch (error) {
+      logger.warn('Cron job initialization failed (non-fatal):', error.message);
+    }
+
+    // 5. Create HTTP server from Express app
     const server = http.createServer(app);
 
     // 5. Initialize Socket.IO with the HTTP server

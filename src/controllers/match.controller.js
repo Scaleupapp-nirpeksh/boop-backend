@@ -496,6 +496,22 @@ const getConversationStarters = async (req, res, next) => {
       })
       .join('\n');
 
+    // Get numerology compatibility as an icebreaker
+    let numerologyIcebreaker = null;
+    try {
+      const PersonalityService = require('../services/personality.service');
+      const numerologyCompat = await PersonalityService.getNumerologyCompatibility(userId, otherUserId);
+      if (numerologyCompat.icebreaker) {
+        numerologyIcebreaker = {
+          text: numerologyCompat.icebreaker,
+          category: 'numerology',
+          compatibility: numerologyCompat.compatibility,
+        };
+      }
+    } catch {
+      // Numerology is optional — continue without it
+    }
+
     try {
       const OpenAI = require('openai');
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -518,10 +534,13 @@ const getConversationStarters = async (req, res, next) => {
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      return res.json({ starters: result.starters || [] });
+      const starters = result.starters || [];
+      if (numerologyIcebreaker) {
+        starters.push(numerologyIcebreaker);
+      }
+      return res.json({ starters });
     } catch (aiError) {
-      return res.json({
-        starters: [
+      const fallbackStarters = [
           {
             text: "What's something you've been passionate about lately?",
             category: 'deeper_question',
@@ -538,8 +557,11 @@ const getConversationStarters = async (req, res, next) => {
             text: "I'm curious — what made you swipe on Boop instead of other apps?",
             category: 'about_their_answer',
           },
-        ],
-      });
+        ];
+      if (numerologyIcebreaker) {
+        fallbackStarters.push(numerologyIcebreaker);
+      }
+      return res.json({ starters: fallbackStarters });
     }
   } catch (error) {
     next(error);

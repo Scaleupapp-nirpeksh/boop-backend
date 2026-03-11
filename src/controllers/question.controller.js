@@ -1,5 +1,6 @@
 const asyncHandler = require('../utils/asyncHandler');
 const QuestionService = require('../services/question.service');
+const PersonalityService = require('../services/personality.service');
 const UploadService = require('../services/upload.service');
 const TranscriptionService = require('../services/transcription.service');
 
@@ -122,9 +123,43 @@ const submitVoiceAnswer = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get the user's answer history (all answered questions with answers)
+ * @route   GET /api/v1/questions/history
+ * @access  Private
+ */
+const getAnswerHistory = asyncHandler(async (req, res) => {
+  const result = await QuestionService.getAnswerHistory(req.user._id);
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: `${result.history.length} answers found`,
+    data: result,
+  });
+});
+
+/**
+ * @desc    Get the user's latest personality analysis
+ * @route   GET /api/v1/questions/personality
+ * @access  Private
+ */
+const getPersonalityAnalysis = asyncHandler(async (req, res) => {
+  const result = await PersonalityService.getLatestAnalysis(req.user._id);
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: result.analysis ? 'Personality analysis retrieved' : 'No analysis available yet',
+    data: result,
+  });
+});
+
 module.exports = {
   getAvailableQuestions,
   submitAnswer,
   submitVoiceAnswer,
   getProgress,
+  getAnswerHistory,
+  getPersonalityAnalysis,
 };

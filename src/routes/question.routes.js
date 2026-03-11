@@ -20,4 +20,10 @@ router.post('/answer', validate(submitAnswerSchema), questionController.submitAn
 // POST /questions/voice-answer — Submit a voice answer (audio file)
 router.post('/voice-answer', uploadVoiceAnswer, questionController.submitVoiceAnswer);
 
+// GET /questions/history — Get all answered questions with answers
+router.get('/history', questionController.getAnswerHistory);
+
+// GET /questions/personality — Get latest personality analysis
+router.get('/personality', questionController.getPersonalityAnalysis);
+
 module.exports = router;

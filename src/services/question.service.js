@@ -146,6 +146,38 @@ class QuestionService {
       }
     }
 
+    // Trigger personality analysis at milestones
+    try {
+      const PersonalityService = require('./personality.service');
+      PersonalityService.checkAndTriggerAnalysis(userId, user.questionsAnswered);
+    } catch (err) {
+      logger.warn('Personality analysis trigger skipped:', err.message);
+    }
+
+    // Proactive match recalculation at milestones
+    const recalcMilestones = [6, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+    if (recalcMilestones.includes(user.questionsAnswered)) {
+      try {
+        const Match = require('../models/Match');
+        const CompatibilityService = require('./compatibility.service');
+        const activeMatches = await Match.find({
+          users: userId,
+          isActive: true,
+        }).select('users').lean();
+
+        for (const match of activeMatches) {
+          const otherId = match.users.find((u) => u.toString() !== userId.toString());
+          if (otherId) {
+            // Fire-and-forget: recalculate in background
+            CompatibilityService.calculateCompatibility(userId, otherId).catch(() => {});
+          }
+        }
+        logger.info(`Match recalculation triggered for user=${userId} at milestone=${user.questionsAnswered}, ${activeMatches.length} matches`);
+      } catch (err) {
+        logger.warn('Match recalculation skipped:', err.message);
+      }
+    }
+
     logger.debug(`Answer submitted: user=${userId}, q=${questionNumber}, total=${user.questionsAnswered}`);
     return { answer, user };
   }
@@ -218,19 +250,76 @@ class QuestionService {
     };
   }
 
+  // ─── Answer History ──────────────────────────────────────────────────
+
+  /**
+   * Returns all answered questions for a user, joined with question data.
+   * Grouped by dimension, sorted by submittedAt desc.
+   *
+   * @param {string} userId
+   * @returns {{ history: object[], groupedByDimension: object }}
+   */
+  static async getAnswerHistory(userId) {
+    const answers = await Answer.find({ userId })
+      .sort({ submittedAt: -1 })
+      .lean();
+
+    if (answers.length === 0) {
+      return { history: [], groupedByDimension: {} };
+    }
+
+    // Fetch question metadata for all answered questions
+    const questionNumbers = answers.map((a) => a.questionNumber);
+    const questions = await Question.find({
+      questionNumber: { $in: questionNumbers },
+    }).lean();
+    const questionMap = new Map(questions.map((q) => [q.questionNumber, q]));
+
+    const history = answers.map((answer) => {
+      const question = questionMap.get(answer.questionNumber) || {};
+      return {
+        id: answer._id,
+        questionNumber: answer.questionNumber,
+        questionText: question.questionText || '',
+        dimension: question.dimension || 'unknown',
+        questionType: question.questionType || 'text',
+        textAnswer: answer.textAnswer,
+        selectedOption: answer.selectedOption,
+        selectedOptions: answer.selectedOptions,
+        followUpAnswer: answer.followUpAnswer,
+        submittedAt: answer.submittedAt,
+      };
+    });
+
+    // Group by dimension
+    const groupedByDimension = {};
+    for (const item of history) {
+      if (!groupedByDimension[item.dimension]) {
+        groupedByDimension[item.dimension] = [];
+      }
+      groupedByDimension[item.dimension].push(item);
+    }
+
+    return { history, groupedByDimension };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────
 
   /**
-   * Calculate days since registration (Day 1 = registration day)
+   * Calculate days since registration (Day 1 = registration day).
+   * Uses IST timezone (Asia/Kolkata, UTC+5:30) for consistent midnight boundary.
    * @private
    */
   static _calculateDaysSinceRegistration(createdAt) {
-    const now = new Date();
-    const created = new Date(createdAt);
+    // Use IST (UTC+5:30) for consistent midnight calculation
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
-    // Set both to midnight for accurate day calculation
-    const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const createdMidnight = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+    const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+    const createdIST = new Date(new Date(createdAt).getTime() + IST_OFFSET_MS);
+
+    // Floor to midnight IST using UTC methods (since we've already shifted)
+    const nowMidnight = new Date(Date.UTC(nowIST.getUTCFullYear(), nowIST.getUTCMonth(), nowIST.getUTCDate()));
+    const createdMidnight = new Date(Date.UTC(createdIST.getUTCFullYear(), createdIST.getUTCMonth(), createdIST.getUTCDate()));
 
     const diffMs = nowMidnight - createdMidnight;
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));

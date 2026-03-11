@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 let embeddingQueue = null;
 let notificationQueue = null;
 let comfortQueue = null;
+let personalityQueue = null;
 
 /**
  * Initialize Bull queues backed by Redis.
@@ -28,21 +29,23 @@ const initializeQueues = () => {
     embeddingQueue = new Bull('embedding-queue', defaultOpts);
     notificationQueue = new Bull('notification-queue', defaultOpts);
     comfortQueue = new Bull('comfort-queue', defaultOpts);
+    personalityQueue = new Bull('personality-queue', defaultOpts);
 
     // Error handlers
-    [embeddingQueue, notificationQueue, comfortQueue].forEach((q) => {
+    [embeddingQueue, notificationQueue, comfortQueue, personalityQueue].forEach((q) => {
       q.on('error', (err) => logger.error(`Queue ${q.name} error:`, err.message));
       q.on('failed', (job, err) =>
         logger.warn(`Queue ${q.name} job ${job.id} failed:`, err.message)
       );
     });
 
-    logger.info('Bull queues initialized: embedding, notification, comfort');
+    logger.info('Bull queues initialized: embedding, notification, comfort, personality');
   } catch (err) {
     logger.warn('Failed to initialize Bull queues (non-fatal):', err.message);
     embeddingQueue = null;
     notificationQueue = null;
     comfortQueue = null;
+    personalityQueue = null;
   }
 };
 
@@ -67,13 +70,19 @@ const registerProcessors = () => {
     comfortQueue.process(3, processComfort);
     logger.info('Registered comfort queue processor (concurrency: 3)');
   }
+
+  if (personalityQueue) {
+    const processPersonality = require('../jobs/personality.processor');
+    personalityQueue.process(2, processPersonality);
+    logger.info('Registered personality queue processor (concurrency: 2)');
+  }
 };
 
 /**
  * Close all queues gracefully.
  */
 const closeQueues = async () => {
-  const queues = [embeddingQueue, notificationQueue, comfortQueue].filter(Boolean);
+  const queues = [embeddingQueue, notificationQueue, comfortQueue, personalityQueue].filter(Boolean);
   await Promise.all(queues.map((q) => q.close()));
   if (queues.length > 0) {
     logger.info('Bull queues closed gracefully');
@@ -83,6 +92,7 @@ const closeQueues = async () => {
 const getEmbeddingQueue = () => embeddingQueue;
 const getNotificationQueue = () => notificationQueue;
 const getComfortQueue = () => comfortQueue;
+const getPersonalityQueue = () => personalityQueue;
 
 module.exports = {
   initializeQueues,
@@ -91,4 +101,5 @@ module.exports = {
   getEmbeddingQueue,
   getNotificationQueue,
   getComfortQueue,
+  getPersonalityQueue,
 };
