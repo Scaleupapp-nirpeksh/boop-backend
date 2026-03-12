@@ -102,6 +102,19 @@ const questionSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+    // Seasonal content (null = permanent, 'valentines_2026', etc.)
+    season: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
+    // Active flag (allows disabling questions without deleting)
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

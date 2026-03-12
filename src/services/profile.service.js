@@ -164,6 +164,14 @@ class ProfileService {
     // Fire-and-forget transcription
     TranscriptionService.transcribeVoiceIntro(userId, buffer, originalName);
 
+    // Check for new badges
+    try {
+      const { BadgeService } = require('./badge.service');
+      BadgeService.checkAndAwardBadges(userId).catch(() => {});
+    } catch {
+      // Non-critical
+    }
+
     logger.info(`Voice intro uploaded for user ${userId} (${duration}s)`);
     return user;
   }

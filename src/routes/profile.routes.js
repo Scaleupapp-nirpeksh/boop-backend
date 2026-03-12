@@ -41,4 +41,7 @@ router.put(
   profileController.updateNotificationPreferences
 );
 
+// GET /profile/badges — Get badge catalog with earned status
+router.get('/badges', profileController.getBadges);
+
 module.exports = router;

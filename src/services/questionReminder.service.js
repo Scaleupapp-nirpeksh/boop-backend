@@ -103,6 +103,168 @@ class QuestionReminderService {
     }
   }
 
+  // ─── Daily Connection Nudges (6 PM IST) ──────────────────────
+
+  /**
+   * Send evening nudges: unread messages, streak warnings, re-engagement.
+   * Called by cron at 6:00 PM IST daily.
+   */
+  static async sendConnectionNudges() {
+    logger.info('DailyNudge: starting evening connection nudges');
+
+    try {
+      const Match = require('../models/Match');
+      const Conversation = require('../models/Conversation');
+
+      const users = await User.find({
+        isActive: true,
+        isBanned: false,
+        fcmToken: { $exists: true, $ne: null },
+      })
+        .select('_id firstName lastActive notificationPreferences')
+        .lean();
+
+      let sentCount = 0;
+
+      for (const user of users) {
+        try {
+          if (
+            user.notificationPreferences?.allMuted ||
+            user.notificationPreferences?.mutedTypes?.includes('connection_nudge')
+          ) continue;
+
+          // Check for unread messages
+          const unreadConversations = await Conversation.countDocuments({
+            participants: user._id,
+            isActive: true,
+            [`unreadCount.${user._id}`]: { $gt: 0 },
+          });
+
+          if (unreadConversations > 0) {
+            await NotificationService.sendPush(user._id, {
+              type: 'connection_nudge',
+              title: 'Messages waiting for you',
+              body: `You have unread messages in ${unreadConversations} conversation${unreadConversations > 1 ? 's' : ''}. Don't leave them hanging!`,
+              data: { screen: 'chat' },
+            });
+            sentCount++;
+            continue;
+          }
+
+          // Check for streak warnings (active yesterday but not today)
+          const streakMatches = await Match.find({
+            users: user._id,
+            isActive: true,
+            'streak.current': { $gt: 2 },
+          })
+            .select('streak users')
+            .populate('users', 'firstName')
+            .lean();
+
+          const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+          const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+          const todayIST = nowIST.toISOString().split('T')[0];
+
+          for (const match of streakMatches) {
+            if (!match.streak?.lastActiveDate) continue;
+            const lastIST = new Date(new Date(match.streak.lastActiveDate).getTime() + IST_OFFSET_MS)
+              .toISOString().split('T')[0];
+
+            if (lastIST !== todayIST) {
+              const otherUser = match.users.find(u => u._id.toString() !== user._id.toString());
+              const otherName = otherUser?.firstName || 'your match';
+
+              if (user.notificationPreferences?.mutedTypes?.includes('streak_warning')) continue;
+
+              await NotificationService.sendPush(user._id, {
+                type: 'streak_warning',
+                title: `Don't break your 🔥${match.streak.current} streak!`,
+                body: `Send ${otherName} a message before midnight to keep it going`,
+                data: { matchId: match._id.toString(), screen: 'chat' },
+              });
+              sentCount++;
+              break; // One streak warning per user per day
+            }
+          }
+
+          // Re-engagement for inactive users (2+ days since last activity)
+          if (user.lastActive) {
+            const daysSinceActive = (Date.now() - new Date(user.lastActive).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceActive >= 2) {
+              const activeMatches = await Match.countDocuments({
+                users: user._id,
+                isActive: true,
+                stage: { $ne: 'archived' },
+              });
+
+              if (activeMatches > 0) {
+                await NotificationService.sendPush(user._id, {
+                  type: 'connection_nudge',
+                  title: 'Your connections miss you!',
+                  body: `${activeMatches} ${activeMatches === 1 ? 'person is' : 'people are'} waiting to hear from you`,
+                  data: { screen: 'home' },
+                });
+                sentCount++;
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn(`DailyNudge: failed for user=${user._id}:`, err.message);
+        }
+      }
+
+      logger.info(`DailyNudge: sent ${sentCount} evening nudges to ${users.length} users`);
+    } catch (err) {
+      logger.error('DailyNudge: evening nudges failed:', err.message);
+    }
+  }
+
+  // ─── Morning Digest (9 AM IST) ──────────────────────────────
+
+  /**
+   * Send morning digest: new candidates available, quick stats.
+   * Called by cron at 9:00 AM IST daily.
+   */
+  static async sendMorningDigest() {
+    logger.info('DailyNudge: starting morning digest');
+
+    try {
+      const users = await User.find({
+        isActive: true,
+        isBanned: false,
+        fcmToken: { $exists: true, $ne: null },
+        profileStage: 'ready',
+      })
+        .select('_id notificationPreferences')
+        .lean();
+
+      let sentCount = 0;
+
+      for (const user of users) {
+        try {
+          if (
+            user.notificationPreferences?.allMuted ||
+            user.notificationPreferences?.mutedTypes?.includes('daily_digest')
+          ) continue;
+
+          await NotificationService.sendPush(user._id, {
+            type: 'daily_digest',
+            title: 'Good morning! ☀️',
+            body: 'New daily connections are waiting for you. Open Boop to discover today\'s matches!',
+            data: { screen: 'discover' },
+          });
+          sentCount++;
+        } catch (err) {
+          logger.warn(`DailyNudge: morning digest failed for user=${user._id}:`, err.message);
+        }
+      }
+
+      logger.info(`DailyNudge: sent ${sentCount} morning digests`);
+    } catch (err) {
+      logger.error('DailyNudge: morning digest failed:', err.message);
+    }
+  }
+
   /**
    * Calculate days since registration using IST timezone (Asia/Kolkata, UTC+5:30).
    * @private

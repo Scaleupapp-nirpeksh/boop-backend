@@ -136,6 +136,14 @@ const userSchema = new mongoose.Schema(
       default: 'incomplete',
     },
 
+    // Badges
+    badges: [
+      {
+        key: { type: String, required: true },
+        earnedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     // Premium
     isPremium: {
       type: Boolean,
@@ -180,7 +188,7 @@ const userSchema = new mongoose.Schema(
       quietHoursStart: { type: String }, // e.g., "22:00"
       quietHoursEnd: { type: String }, // e.g., "07:00"
       timezone: { type: String, default: 'Asia/Kolkata' },
-      mutedTypes: [{ type: String, enum: ['new_match', 'new_message', 'game_invite', 'reveal_request', 'photos_revealed', 'stage_advanced', 'like_received', 'questions_reminder'] }],
+      mutedTypes: [{ type: String, enum: ['new_match', 'new_message', 'game_invite', 'reveal_request', 'photos_revealed', 'stage_advanced', 'like_received', 'questions_reminder', 'boop', 'streak_milestone', 'daily_digest', 'streak_warning', 'connection_nudge', 'badge_earned'] }],
     },
 
     // Auth (hashed refresh token stored for validation)

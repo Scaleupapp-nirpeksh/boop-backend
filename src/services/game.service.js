@@ -317,6 +317,17 @@ class GameService {
       } catch (_) {
         // Non-critical
       }
+
+      // Check badges for all participants
+      try {
+        const { BadgeService } = require('./badge.service');
+        for (const p of game.participants) {
+          const pId = p.userId || p._id || p;
+          BadgeService.checkAndAwardBadges(pId.toString()).catch(() => {});
+        }
+      } catch {
+        // Non-critical
+      }
     }
 
     return {

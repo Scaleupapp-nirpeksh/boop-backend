@@ -167,6 +167,24 @@ const updateNotificationPreferences = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get badge catalog with earned status
+ * @route   GET /api/v1/profile/badges
+ * @access  Private
+ */
+const getBadges = asyncHandler(async (req, res) => {
+  const { BadgeService } = require('../services/badge.service');
+
+  const badges = await BadgeService.getBadgeCatalog(req.user._id);
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: `${badges.filter((b) => b.earned).length} badges earned`,
+    data: { badges },
+  });
+});
+
 module.exports = {
   getProfile,
   updateBasicInfo,
@@ -176,4 +194,5 @@ module.exports = {
   reorderPhotos,
   updateFCMToken,
   updateNotificationPreferences,
+  getBadges,
 };

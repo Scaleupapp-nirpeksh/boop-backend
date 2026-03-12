@@ -267,6 +267,32 @@ const removeReaction = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get media messages (images/voice) in a conversation
+ * @route   GET /api/v1/messages/conversations/:conversationId/media
+ * @access  Private
+ */
+const getConversationMedia = asyncHandler(async (req, res) => {
+  const { type, page, limit } = req.query;
+
+  const result = await MessageService.getMediaMessages(
+    req.user._id,
+    req.params.conversationId,
+    {
+      type: type || null,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 30,
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: `${result.media.length} media items retrieved`,
+    data: result,
+  });
+});
+
 module.exports = {
   getConversations,
   getMessages,
@@ -275,4 +301,5 @@ module.exports = {
   markAsRead,
   addReaction,
   removeReaction,
+  getConversationMedia,
 };

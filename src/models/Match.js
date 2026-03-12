@@ -106,6 +106,23 @@ const matchSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ─── Boop (Poke) Feature ──────────────────────────────────────
+    lastBoop: {
+      senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      sentAt: { type: Date, default: null },
+    },
+    boopCount: {
+      type: Number,
+      default: 0,
+    },
+
+    // ─── Streak Tracking ────────────────────────────────────────
+    streak: {
+      current: { type: Number, default: 0 },
+      longest: { type: Number, default: 0 },
+      lastActiveDate: { type: Date, default: null },
+    },
+
     // Whether the match is active
     isActive: {
       type: Boolean,

@@ -57,7 +57,10 @@ class MatchService {
         matchTier: match.matchTier,
         comfortScore: match.comfortScore,
         matchedAt: match.matchedAt,
-        otherUser: await MatchService._formatOtherUser(otherUser, photosRevealed),
+        lastBoop: match.lastBoop || null,
+        boopCount: match.boopCount || 0,
+        streak: match.streak || { current: 0, longest: 0, lastActiveDate: null },
+        otherUser: await MatchService._formatOtherUser(otherUser, photosRevealed, false, match.comfortScore || 0),
       };
     }));
 
@@ -110,7 +113,10 @@ class MatchService {
       comfortScore: match.comfortScore,
       matchedAt: match.matchedAt,
       revealStatus: match.revealStatus,
-      otherUser: await MatchService._formatOtherUser(otherUser, photosRevealed, true),
+      lastBoop: match.lastBoop || null,
+      boopCount: match.boopCount || 0,
+      streak: match.streak || { current: 0, longest: 0, lastActiveDate: null },
+      otherUser: await MatchService._formatOtherUser(otherUser, photosRevealed, true, match.comfortScore || 0),
     };
   }
 
@@ -518,15 +524,272 @@ class MatchService {
     };
   }
 
+  // ─── Boop Gesture ───────────────────────────────────────────
+
+  /**
+   * Send a "Boop" (poke) to a match.
+   * Rate-limited: 1 boop per match per 4 hours.
+   * Creates a system message in the conversation and sends push notification.
+   */
+  static async sendBoop(userId, matchId) {
+    const match = await Match.findOne({
+      _id: matchId,
+      users: userId,
+      isActive: true,
+    });
+
+    if (!match) {
+      const error = new Error('Match not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Rate limit: 1 boop per 4 hours
+    if (match.lastBoop?.sentAt) {
+      const hoursSinceLastBoop = (Date.now() - new Date(match.lastBoop.sentAt).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceLastBoop < 4) {
+        const error = new Error('You can only boop once every 4 hours');
+        error.statusCode = 429;
+        throw error;
+      }
+    }
+
+    const otherUserId = match.getOtherUserId(userId);
+
+    // Update match boop data
+    match.lastBoop = { senderId: userId, sentAt: new Date() };
+    match.boopCount = (match.boopCount || 0) + 1;
+    await match.save();
+
+    // Send system message in conversation
+    const conversation = await Conversation.findOne({ matchId });
+    if (conversation) {
+      const systemMessage = await Message.create({
+        conversationId: conversation._id,
+        senderId: userId,
+        type: 'system',
+        content: { text: 'sent a boop! 💕' },
+      });
+      conversation.lastMessage = {
+        text: '💕 Boop!',
+        senderId: userId,
+        sentAt: systemMessage.createdAt,
+        type: 'system',
+      };
+      conversation.messageCount += 1;
+      await conversation.save();
+    }
+
+    // Get sender name for notification
+    const sender = await User.findById(userId).select('firstName').lean();
+    const senderName = sender?.firstName || 'Someone';
+
+    // Send push notification
+    NotificationService.sendPush(otherUserId, {
+      type: 'boop',
+      title: `${senderName} booped you! 💕`,
+      body: `${senderName} is thinking of you`,
+      data: { matchId: matchId.toString(), senderId: userId.toString(), senderName },
+    });
+
+    logger.info(`Boop: ${userId} → ${otherUserId} on match ${matchId} (total: ${match.boopCount})`);
+
+    return {
+      matchId: match._id,
+      boopCount: match.boopCount,
+      otherUserId,
+      senderName,
+    };
+  }
+
+  // ─── Compatibility Deep-Dive ─────────────────────────────────
+
+  /**
+   * Returns a detailed breakdown of compatibility across all 8 dimensions,
+   * with AI-generated narratives for each dimension.
+   */
+  static async getCompatibilityDeepDive(userId, matchId) {
+    const Answer = require('../models/Answer');
+    const Question = require('../models/Question');
+
+    const match = await Match.findOne({
+      _id: matchId,
+      users: userId,
+      isActive: true,
+    })
+      .populate('users', 'firstName')
+      .lean();
+
+    if (!match) {
+      const error = new Error('Match not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const otherUserId = match.users.find(
+      (u) => u._id.toString() !== userId.toString()
+    );
+    const currentUser = match.users.find(
+      (u) => u._id.toString() === userId.toString()
+    );
+
+    const dimensionScores = match.dimensionScores
+      ? Object.fromEntries(match.dimensionScores)
+      : {};
+
+    const DIMENSION_META = {
+      emotional_vulnerability: { label: 'Emotional Honesty', icon: 'heart.fill', color: 'FF6B6B' },
+      attachment_patterns: { label: 'Attachment Rhythm', icon: 'link', color: 'E056A0' },
+      life_vision: { label: 'Future Direction', icon: 'sparkles', color: '4ECDC4' },
+      conflict_resolution: { label: 'Repair Style', icon: 'arrow.triangle.2.circlepath', color: 'FF8C42' },
+      love_expression: { label: 'Love Expression', icon: 'gift.fill', color: 'F56FAD' },
+      intimacy_comfort: { label: 'Closeness Comfort', icon: 'person.2.fill', color: '9B5DE5' },
+      lifestyle_rhythm: { label: 'Daily Rhythm', icon: 'clock.fill', color: '00BBF9' },
+      growth_mindset: { label: 'Growth Mindset', icon: 'arrow.up.right', color: '2ECC71' },
+    };
+
+    // Fetch shared question answers for context
+    const [userAnswers, otherAnswers] = await Promise.all([
+      Answer.find({ userId }).limit(20).lean(),
+      Answer.find({ userId: otherUserId._id }).limit(20).lean(),
+    ]);
+
+    const allQuestionNumbers = [
+      ...userAnswers.map((a) => a.questionNumber),
+      ...otherAnswers.map((a) => a.questionNumber),
+    ];
+    const questions = await Question.find({
+      questionNumber: { $in: [...new Set(allQuestionNumbers)] },
+    }).lean();
+    const questionMap = new Map(questions.map((q) => [q.questionNumber, q]));
+
+    // Find shared questions (both answered)
+    const userAnswerMap = new Map(userAnswers.map((a) => [a.questionNumber, a]));
+    const otherAnswerMap = new Map(otherAnswers.map((a) => [a.questionNumber, a]));
+    const sharedQuestionNumbers = userAnswers
+      .filter((a) => otherAnswerMap.has(a.questionNumber))
+      .map((a) => a.questionNumber);
+
+    // Build dimensions array
+    const dimensions = Object.entries(DIMENSION_META).map(([key, meta]) => {
+      const score = dimensionScores[key] ?? null;
+      const scorePercent = score !== null ? Math.round(score * 100) : null;
+
+      return {
+        key,
+        label: meta.label,
+        icon: meta.icon,
+        color: meta.color,
+        score: scorePercent,
+      };
+    });
+
+    // Sort: highest score first
+    dimensions.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+    // Generate AI narratives
+    let narratives = {};
+    try {
+      const OpenAI = require('openai');
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const sharedContext = sharedQuestionNumbers.slice(0, 10).map((qn) => {
+        const q = questionMap.get(qn);
+        const uAns = userAnswerMap.get(qn);
+        const oAns = otherAnswerMap.get(qn);
+        const getAnswer = (a) => a?.textAnswer || a?.selectedOption || (a?.selectedOptions || []).join(', ');
+        return `Q: ${q?.questionText || 'Question'}\n  ${currentUser?.firstName}: ${getAnswer(uAns)}\n  ${otherUserId?.firstName}: ${getAnswer(oAns)}`;
+      }).join('\n\n');
+
+      const dimData = dimensions.map(d => `${d.label} (${d.key}): ${d.score ?? 'N/A'}%`).join('\n');
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        max_tokens: 800,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `You are a relationship psychologist analyzing a compatibility deep-dive for two people on a dating app. For each compatibility dimension, write a warm, specific 1-2 sentence narrative explaining what this score means for their connection. Use their first names. Be encouraging for high scores and gently curious for lower ones.
+
+Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overallNarrative": "2-3 sentence overall compatibility summary", "strongestBond": "dimension_key", "growthOpportunity": "dimension_key" }`,
+          },
+          {
+            role: 'user',
+            content: `${currentUser?.firstName || 'User 1'} and ${otherUserId?.firstName || 'User 2'}\n\nDimension scores:\n${dimData}\n\nShared answers:\n${sharedContext || 'No shared answers yet'}`,
+          },
+        ],
+      });
+
+      narratives = JSON.parse(completion.choices[0].message.content);
+    } catch {
+      // Fallback: generate simple narratives
+      const FALLBACK_NARRATIVES = {
+        emotional_vulnerability: (s) => s >= 70 ? 'You both open up in a similar way — a strong emotional foundation.' : 'This is where patience and curiosity will strengthen the bond.',
+        attachment_patterns: (s) => s >= 70 ? 'Your pacing around connection feels naturally compatible.' : 'You may want different speeds of reassurance — worth exploring gently.',
+        life_vision: (s) => s >= 70 ? 'The kind of future you imagine has real overlap.' : 'Keep talking about long-term expectations early and openly.',
+        conflict_resolution: (s) => s >= 70 ? 'You tend to repair tension in ways that can actually meet.' : 'Different repair styles can complement each other with awareness.',
+        love_expression: (s) => s >= 70 ? 'The way you show care lands in a familiar register.' : 'Learning each other\'s love language will unlock a lot here.',
+        intimacy_comfort: (s) => s >= 70 ? 'Your comfort with closeness feels unusually well matched.' : 'Let this part grow through trust, not pressure.',
+        lifestyle_rhythm: (s) => s >= 70 ? 'Your day-to-day tempo looks easy to share.' : 'Finding your shared rhythm will take some creative compromise.',
+        growth_mindset: (s) => s >= 70 ? 'You both lean toward growth instead of staying stuck.' : 'Staying curious together can turn this into a real strength.',
+      };
+
+      const dimNarratives = {};
+      dimensions.forEach((d) => {
+        const fn = FALLBACK_NARRATIVES[d.key];
+        dimNarratives[d.key] = fn ? fn(d.score ?? 0) : `${d.score ?? 0}% alignment in this dimension.`;
+      });
+
+      narratives = {
+        narratives: dimNarratives,
+        overallNarrative: `${currentUser?.firstName || 'You'} and ${otherUserId?.firstName || 'your match'} share ${match.compatibilityScore}% overall compatibility. Your strongest areas create a solid foundation, while growth areas offer a chance to learn from each other.`,
+        strongestBond: dimensions[0]?.key || null,
+        growthOpportunity: dimensions[dimensions.length - 1]?.key || null,
+      };
+    }
+
+    // Enrich dimensions with narratives
+    const enrichedDimensions = dimensions.map((d) => ({
+      ...d,
+      narrative: narratives.narratives?.[d.key] || null,
+    }));
+
+    return {
+      matchId: match._id,
+      compatibilityScore: match.compatibilityScore,
+      matchTier: match.matchTier,
+      user1Name: currentUser?.firstName || null,
+      user2Name: otherUserId?.firstName || null,
+      dimensions: enrichedDimensions,
+      overallNarrative: narratives.overallNarrative || null,
+      strongestBond: narratives.strongestBond || null,
+      growthOpportunity: narratives.growthOpportunity || null,
+    };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────
+
+  /**
+   * Calculate blur level from comfort score.
+   * 0-24 → 30 (heavy blur), 25-49 → 20, 50-69 → 10, 70+ → 0 (clear)
+   */
+  static _calculateBlurLevel(comfortScore) {
+    if (comfortScore >= 70) return 0;
+    if (comfortScore >= 50) return 10;
+    if (comfortScore >= 25) return 20;
+    return 30;
+  }
 
   /**
    * Formats other user data based on photo reveal status.
    * @param {Object} user - Populated user document (lean)
    * @param {boolean} photosRevealed - Whether real photos should be shown
    * @param {boolean} detailed - Whether to include extended profile data
+   * @param {number} comfortScore - Current comfort score (for blur level)
    */
-  static async _formatOtherUser(user, photosRevealed = false, detailed = false) {
+  static async _formatOtherUser(user, photosRevealed = false, detailed = false, comfortScore = 0) {
     if (!user) return null;
 
     const age = user.dateOfBirth
@@ -536,6 +799,8 @@ class MatchService {
         )
       : null;
 
+    const blurLevel = photosRevealed ? 0 : MatchService._calculateBlurLevel(comfortScore);
+
     const base = {
       userId: user._id,
       firstName: user.firstName,
@@ -543,6 +808,7 @@ class MatchService {
       city: user.location?.city || null,
       isOnline: user.isOnline || false,
       lastSeen: user.lastSeen || null,
+      blurLevel,
       voiceIntro: {
         audioUrl: null,
         duration: user.voiceIntro?.duration || null,

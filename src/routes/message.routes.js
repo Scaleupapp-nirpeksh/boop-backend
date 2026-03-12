@@ -35,6 +35,14 @@ router.get(
   messageController.getMessages
 );
 
+// Get media (images/voice) in a conversation
+router.get(
+  '/conversations/:conversationId/media',
+  validateParams(conversationIdParamSchema),
+  validateQuery(paginationSchema),
+  messageController.getConversationMedia
+);
+
 // Send a message
 router.post(
   '/conversations/:conversationId/messages',

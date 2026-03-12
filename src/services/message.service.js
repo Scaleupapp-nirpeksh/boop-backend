@@ -257,6 +257,61 @@ class MessageService {
       // Non-critical
     }
 
+    // ─── Streak Tracking ──────────────────────────────────────────
+    try {
+      const match = await Match.findById(conversation.matchId);
+      if (match) {
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+        const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+        const todayIST = nowIST.toISOString().split('T')[0];
+
+        const lastActiveIST = match.streak?.lastActiveDate
+          ? new Date(new Date(match.streak.lastActiveDate).getTime() + IST_OFFSET_MS).toISOString().split('T')[0]
+          : null;
+
+        if (lastActiveIST !== todayIST) {
+          // New day of activity
+          const yesterday = new Date(nowIST);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayIST = yesterday.toISOString().split('T')[0];
+
+          if (lastActiveIST === yesterdayIST) {
+            // Consecutive day — increment streak
+            match.streak.current = (match.streak.current || 0) + 1;
+          } else {
+            // Gap — reset streak
+            match.streak.current = 1;
+          }
+
+          match.streak.lastActiveDate = new Date();
+          match.streak.longest = Math.max(match.streak.current, match.streak.longest || 0);
+          match.markModified('streak');
+          await match.save();
+
+          // Streak milestone notifications
+          const milestones = [7, 14, 30, 50, 100];
+          if (milestones.includes(match.streak.current)) {
+            const NotificationService = require('./notification.service');
+            const User = require('../models/User');
+            const otherUserId = match.getOtherUserId(senderId);
+            const sender = await User.findById(senderId).select('firstName').lean();
+            const senderName = sender?.firstName || 'Your match';
+
+            for (const uid of [senderId, otherUserId]) {
+              NotificationService.sendPush(uid, {
+                type: 'streak_milestone',
+                title: `🔥 ${match.streak.current}-day streak!`,
+                body: `You and ${uid.toString() === senderId.toString() ? 'your match' : senderName} have chatted ${match.streak.current} days in a row!`,
+                data: { matchId: conversation.matchId.toString() },
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('Streak tracking error:', err.message);
+    }
+
     logger.debug(
       `Message sent in conversation ${conversationId} by user ${senderId} (type: ${type})`
     );
@@ -411,6 +466,65 @@ class MessageService {
       messageId: message._id,
       conversationId: message.conversationId,
       reactions: message.reactions,
+    };
+  }
+
+  // ─── Get Media Messages ───────────────────────────────────────
+
+  /**
+   * Returns paginated media messages (image/voice) for a conversation.
+   * Used by the Chat Media Gallery feature.
+   */
+  static async getMediaMessages(
+    userId,
+    conversationId,
+    { type = null, page = 1, limit = 30 } = {}
+  ) {
+    // Verify user is a participant
+    const conversation = await Conversation.findOne({
+      _id: conversationId,
+      participants: userId,
+      isActive: true,
+    });
+
+    if (!conversation) {
+      const error = new Error('Conversation not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const query = {
+      conversationId,
+      isDeleted: false,
+    };
+
+    if (type && ['image', 'voice'].includes(type)) {
+      query.type = type;
+    } else {
+      query.type = { $in: ['image', 'voice'] };
+    }
+
+    const [messages, total] = await Promise.all([
+      Message.find(query)
+        .populate('senderId', 'firstName')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Message.countDocuments(query),
+    ]);
+
+    const signed = await Promise.all(
+      messages.map((msg) => this._signMessageMedia(msg))
+    );
+
+    return {
+      media: signed,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
     };
   }
 

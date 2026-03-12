@@ -512,23 +512,45 @@ const getConversationStarters = async (req, res, next) => {
       // Numerology is optional — continue without it
     }
 
+    // Build dimension score context for richer prompts
+    const dimensionScores = match.dimensionScores ? Object.fromEntries(match.dimensionScores) : {};
+    const dimensionContext = Object.entries(dimensionScores)
+      .map(([dim, score]) => `${dim.replace(/_/g, ' ')}: ${Math.round(score * 100)}%`)
+      .join(', ');
+
     try {
       const OpenAI = require('openai');
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+      const systemPrompt = `You generate conversation starters for two people who just matched on a dating app called Boop. The app is about genuine connection through personality — no swiping on photos, just real answers.
+
+You have access to:
+1. Both users' question answers (their actual responses to personality questions)
+2. Their compatibility dimension scores (how aligned they are across relationship dimensions)
+
+Generate 5 conversation starters:
+- 2 should reference specific shared or complementary answers
+- 1 should reference a strong compatibility dimension (celebrate what clicks)
+- 1 should gently explore a lower-scoring dimension (curiosity, not confrontation)
+- 1 fun hypothetical or creative prompt inspired by their combined vibe
+
+Each should spark real conversation — not small talk. Be specific and reference actual content from their answers.
+
+Return JSON: { "starters": [{ "text": "...", "category": "shared_interest" | "deeper_question" | "fun_hypothetical" | "about_their_answer" | "dimension_explore" }] }`;
+
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         temperature: 0.85,
-        max_tokens: 400,
+        max_tokens: 500,
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content: `You generate conversation starters for two people who just matched on a dating app called Boop. The app is about genuine connection through personality. Generate 4 conversation starters that reference their shared answers, complementary views, or interesting differences. Each should be a question or prompt that sparks real conversation — not small talk. Return JSON: { "starters": [{ "text": "...", "category": "shared_interest" | "deeper_question" | "fun_hypothetical" | "about_their_answer" }] }`,
+            content: systemPrompt,
           },
           {
             role: 'user',
-            content: `Person 1 answers:\n${userContext}\n\nPerson 2 answers:\n${otherContext}`,
+            content: `Person 1 answers:\n${userContext}\n\nPerson 2 answers:\n${otherContext}\n\nCompatibility dimensions: ${dimensionContext || 'Not yet calculated'}`,
           },
         ],
       });
@@ -568,6 +590,57 @@ const getConversationStarters = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Send a "Boop" (poke) to a match
+ * @route   POST /api/v1/matches/:matchId/boop
+ * @access  Private (requires complete profile)
+ */
+const sendBoop = asyncHandler(async (req, res) => {
+  const result = await MatchService.sendBoop(
+    req.user._id,
+    req.params.matchId
+  );
+
+  // Emit socket event to other user
+  try {
+    const socketManager = require('../config/socket');
+    socketManager.emitToUser(result.otherUserId.toString(), 'match:boop', {
+      matchId: result.matchId.toString(),
+      senderId: req.user._id.toString(),
+      senderName: result.senderName,
+      boopCount: result.boopCount,
+    });
+  } catch (_) {
+    // Non-critical
+  }
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Boop sent! 💕',
+    data: result,
+  });
+});
+
+/**
+ * @desc    Get compatibility deep-dive breakdown across all dimensions
+ * @route   GET /api/v1/matches/:matchId/compatibility
+ * @access  Private (requires complete profile)
+ */
+const getCompatibilityDeepDive = asyncHandler(async (req, res) => {
+  const result = await MatchService.getCompatibilityDeepDive(
+    req.user._id,
+    req.params.matchId
+  );
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Compatibility deep-dive generated',
+    data: result,
+  });
+});
+
 module.exports = {
   getMatches,
   getMatchById,
@@ -579,4 +652,6 @@ module.exports = {
   getScoreHistory,
   getRelationshipInsights,
   getConversationStarters,
+  getCompatibilityDeepDive,
+  sendBoop,
 };

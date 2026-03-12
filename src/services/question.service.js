@@ -29,9 +29,17 @@ class QuestionService {
       const answeredDocs = await Answer.find({ userId }, { questionNumber: 1 });
       const answeredNumbers = new Set(answeredDocs.map((a) => a.questionNumber));
 
+      // Include permanent questions and active seasonal questions
+      const activeSeason = this._getActiveSeason();
+      const seasonFilter = activeSeason
+        ? { $or: [{ season: null }, { season: activeSeason }] }
+        : { season: null };
+
       const questions = await Question.find({
         dayAvailable: { $lte: daysSinceRegistration },
         questionNumber: { $nin: Array.from(answeredNumbers) },
+        isActive: { $ne: false },
+        ...seasonFilter,
       }).sort({ dayAvailable: 1, order: 1 });
 
       return {
@@ -176,6 +184,14 @@ class QuestionService {
       } catch (err) {
         logger.warn('Match recalculation skipped:', err.message);
       }
+    }
+
+    // Check for new badges
+    try {
+      const { BadgeService } = require('./badge.service');
+      BadgeService.checkAndAwardBadges(userId).catch(() => {});
+    } catch {
+      // Non-critical
     }
 
     logger.debug(`Answer submitted: user=${userId}, q=${questionNumber}, total=${user.questionsAnswered}`);
@@ -326,6 +342,29 @@ class QuestionService {
 
     // Day 1 = registration day, Day 2 = next day, etc.
     return diffDays + 1;
+  }
+
+  /**
+   * Returns the active seasonal event key, or null if none active.
+   * @private
+   */
+  static _getActiveSeason() {
+    const SEASONS = [
+      { key: 'valentines_2026', start: '2026-02-07', end: '2026-02-21' },
+      { key: 'holi_2026', start: '2026-03-10', end: '2026-03-20' },
+      { key: 'summer_2026', start: '2026-05-01', end: '2026-05-31' },
+      { key: 'monsoon_2026', start: '2026-07-01', end: '2026-07-31' },
+      { key: 'diwali_2026', start: '2026-10-15', end: '2026-10-30' },
+      { key: 'christmas_2026', start: '2026-12-20', end: '2026-12-31' },
+    ];
+
+    const now = new Date();
+    for (const season of SEASONS) {
+      if (now >= new Date(season.start) && now <= new Date(season.end + 'T23:59:59Z')) {
+        return season.key;
+      }
+    }
+    return null;
   }
 
   /**

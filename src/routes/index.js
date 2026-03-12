@@ -11,6 +11,8 @@ const matchRoutes = require('./match.routes');
 const messageRoutes = require('./message.routes');
 const gameRoutes = require('./game.routes');
 const notificationRoutes = require('./notification.routes');
+const datePlanRoutes = require('./datePlan.routes');
+const publicRoutes = require('./public.routes');
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -21,6 +23,8 @@ router.use('/matches', matchRoutes);
 router.use('/messages', messageRoutes);
 router.use('/games', gameRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/date-plans', datePlanRoutes);
+router.use('/public', publicRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

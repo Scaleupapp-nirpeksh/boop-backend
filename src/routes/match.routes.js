@@ -98,4 +98,39 @@ router.get(
   matchController.getConversationStarters
 );
 
+// ─── Compatibility Deep-Dive ─────────────────────────────────
+router.get(
+  '/:matchId/compatibility',
+  validateParams(matchIdParamSchema),
+  matchController.getCompatibilityDeepDive
+);
+
+// ─── Boop (Poke) ────────────────────────────────────────────
+router.post(
+  '/:matchId/boop',
+  validateParams(matchIdParamSchema),
+  matchController.sendBoop
+);
+
+// ─── Date Plans (match-scoped) ──────────────────────────────
+const datePlanController = require('../controllers/datePlan.controller');
+
+router.post(
+  '/:matchId/date-plans',
+  validateParams(matchIdParamSchema),
+  datePlanController.proposeDatePlan
+);
+
+router.get(
+  '/:matchId/date-plans',
+  validateParams(matchIdParamSchema),
+  datePlanController.getDatePlans
+);
+
+router.get(
+  '/:matchId/venue-suggestions',
+  validateParams(matchIdParamSchema),
+  datePlanController.suggestVenues
+);
+
 module.exports = router;
