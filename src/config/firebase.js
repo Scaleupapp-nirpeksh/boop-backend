@@ -11,29 +11,35 @@ let messaging = null;
  */
 const initializeFirebase = () => {
   try {
-    // Check if required env vars are present
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-    if (!projectId || !clientEmail || !privateKey) {
-      logger.warn(
-        'Firebase not configured — push notifications disabled. ' +
-          'Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY to enable.'
-      );
-      return null;
-    }
-
     // Initialize Firebase Admin (only once)
     if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId,
-          clientEmail,
-          // Handle escaped newlines from .env
-          privateKey: privateKey.replace(/\\n/g, '\n'),
-        }),
-      });
+      // Option 1: GOOGLE_APPLICATION_CREDENTIALS file path
+      const credFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      // Option 2: Individual env vars
+      const projectId = process.env.FIREBASE_PROJECT_ID;
+      const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+      if (credFile) {
+        const serviceAccount = require(credFile);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+      } else if (projectId && clientEmail && privateKey) {
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId,
+            clientEmail,
+            privateKey: privateKey.replace(/\\n/g, '\n'),
+          }),
+        });
+      } else {
+        logger.warn(
+          'Firebase not configured — push notifications disabled. ' +
+            'Set GOOGLE_APPLICATION_CREDENTIALS or FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY.'
+        );
+        return null;
+      }
     }
 
     messaging = admin.messaging();
