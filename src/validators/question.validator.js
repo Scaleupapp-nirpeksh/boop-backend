@@ -7,12 +7,12 @@ const submitAnswerSchema = Joi.object({
   questionNumber: Joi.number()
     .integer()
     .min(1)
-    .max(60)
+    .max(200)
     .required()
     .messages({
       'number.base': 'Question number must be a number',
-      'number.min': 'Question number must be between 1 and 60',
-      'number.max': 'Question number must be between 1 and 60',
+      'number.min': 'Question number must be between 1 and 200',
+      'number.max': 'Question number must be between 1 and 200',
       'any.required': 'Question number is required',
     }),
 

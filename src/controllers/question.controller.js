@@ -78,11 +78,11 @@ const submitVoiceAnswer = asyncHandler(async (req, res) => {
     });
   }
 
-  if (!questionNumber || questionNumber < 1 || questionNumber > 60) {
+  if (!questionNumber || questionNumber < 1 || questionNumber > 200) {
     return res.status(400).json({
       success: false,
       statusCode: 400,
-      message: 'Valid question number (1-60) is required',
+      message: 'Valid question number is required',
     });
   }
 
