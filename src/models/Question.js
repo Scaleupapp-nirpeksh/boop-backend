@@ -8,7 +8,7 @@ const questionSchema = new mongoose.Schema(
       required: true,
       unique: true,
       min: 1,
-      max: 60,
+      max: 200,
     },
 
     // Psychological dimension this question measures
