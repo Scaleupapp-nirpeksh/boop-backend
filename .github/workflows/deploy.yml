@@ -14,10 +14,26 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: FIREBASE_PROJECT_ID,FIREBASE_CLIENT_EMAIL,FIREBASE_PRIVATE_KEY
           script: |
             cd /home/ubuntu/boop-backend
             git pull origin main
             npm install --production
+
+            # Ensure Firebase env vars are present in .env
+            for VAR in FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY; do
+              VAL=$(eval echo \$$VAR)
+              if [ -n "$VAL" ]; then
+                grep -q "^${VAR}=" .env 2>/dev/null && sed -i "/^${VAR}=/d" .env
+                echo "${VAR}=${VAL}" >> .env
+                echo "Set ${VAR} in .env"
+              fi
+            done
+
             pm2 restart boop-backend
             pm2 save
             echo "Deployed at $(date)"
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}

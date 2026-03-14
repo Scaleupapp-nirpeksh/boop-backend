@@ -78,7 +78,13 @@ class NotificationService {
     if (NotificationService._isQuietHours(user.notificationPreferences)) return;
 
     const messaging = getMessaging();
-    if (!messaging) return;
+    if (!messaging) {
+      logger.error(`Push notification SKIPPED for user ${userId}: Firebase Messaging not initialized. Check FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY env vars.`);
+      if (notification) {
+        await require('../models/Notification').findByIdAndUpdate(notification._id, { pushError: 'Firebase Messaging not initialized' });
+      }
+      return;
+    }
 
     try {
       await messaging.send({
