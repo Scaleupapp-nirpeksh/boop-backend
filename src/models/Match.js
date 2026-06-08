@@ -28,6 +28,15 @@ const matchSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Deterministic unique key for the user pair ("sortedIdA_sortedIdB").
+    // Enforces one match per pair WITHOUT the multikey-array uniqueness
+    // pitfall of a unique index on `users` (which would cap each user at a
+    // single match across the whole collection). Set in the pre-validate hook.
+    pairKey: {
+      type: String,
+      unique: true,
+    },
+
     // Current stage in the connection pipeline
     stage: {
       type: String,
@@ -136,8 +145,9 @@ const matchSchema = new mongoose.Schema(
 
 // ─── Indexes ────────────────────────────────────────────────────
 
-// Unique pair of users (prevents duplicate matches)
-matchSchema.index({ users: 1 }, { unique: true });
+// Non-unique: a user appears in many matches. Duplicate-pair prevention is
+// handled by the unique `pairKey` field above, not by this index.
+matchSchema.index({ users: 1 });
 
 // Find matches for a specific user filtered by stage and active status
 matchSchema.index({ users: 1, stage: 1, isActive: 1 });
@@ -162,6 +172,17 @@ matchSchema.methods.canTransitionTo = function (targetStage) {
   const validTargets = STAGE_TRANSITIONS[this.stage] || [];
   return validTargets.includes(targetStage);
 };
+
+// Keep pairKey in sync with the sorted user pair on every create/save.
+matchSchema.pre('validate', function (next) {
+  if (Array.isArray(this.users) && this.users.length === 2) {
+    this.pairKey = this.users
+      .map((u) => u.toString())
+      .sort()
+      .join('_');
+  }
+  next();
+});
 
 const Match = mongoose.model('Match', matchSchema);
 
