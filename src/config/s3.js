@@ -1,12 +1,20 @@
 const { S3Client } = require('@aws-sdk/client-s3');
 const logger = require('../utils/logger');
 
+// In production, credentials come from the EC2 instance role via the AWS SDK
+// default provider chain (no static keys on disk). Only pass explicit keys
+// when both are present in the environment (e.g. local development).
+const hasStaticCreds =
+  process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'ap-south-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
+  ...(hasStaticCreds && {
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+  }),
 });
 
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'boop-uploads';
