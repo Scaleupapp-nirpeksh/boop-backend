@@ -12,6 +12,11 @@ const { globalLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
+// Behind the nginx reverse proxy: trust the first proxy hop so req.ip,
+// req.protocol (X-Forwarded-Proto), and rate limiting key on the real
+// client IP instead of 127.0.0.1.
+app.set('trust proxy', 1);
+
 const API_VERSION = process.env.API_VERSION || 'v1';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
@@ -26,10 +31,20 @@ app.use(
   })
 );
 
-// CORS
+// CORS — native mobile apps send no Origin header (allowed). Browser
+// origins must be explicitly allowlisted via CORS_ORIGINS (comma-separated).
+const allowedOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: '*', // Restrict in production
+    origin(origin, callback) {
+      if (!origin) return callback(null, true); // mobile app / server-to-server
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
