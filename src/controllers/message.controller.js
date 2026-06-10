@@ -141,6 +141,17 @@ const uploadMedia = asyncHandler(async (req, res) => {
     throw error;
   }
 
+  // Moderate images before they reach S3 (voice notes are not image-moderated)
+  if (type === 'image') {
+    const ModerationService = require('../services/moderation.service');
+    const moderation = await ModerationService.moderateImage(req.file.buffer, req.file.mimetype);
+    if (ModerationService.shouldBlockPhoto(moderation)) {
+      const error = new Error('This image does not meet our content guidelines');
+      error.statusCode = 422;
+      throw error;
+    }
+  }
+
   const ext = req.file.originalname?.split('.').pop()?.toLowerCase()
     || (type === 'voice' ? 'm4a' : 'jpg');
   const key = `users/${req.user._id}/messages/${req.params.conversationId}/${type}-${Date.now()}.${ext}`;

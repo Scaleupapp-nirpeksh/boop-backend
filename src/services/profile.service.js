@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const UploadService = require('./upload.service');
 const TranscriptionService = require('./transcription.service');
+const ModerationService = require('./moderation.service');
 const logger = require('../utils/logger');
 
 class ProfileService {
@@ -205,6 +206,18 @@ class ProfileService {
       const error = new Error(`Too many photos. You have ${currentCount}, can add up to ${6 - currentCount} more`);
       error.statusCode = 400;
       throw error;
+    }
+
+    // Moderate every photo before any processing or S3 upload
+    for (const file of files) {
+      const moderation = await ModerationService.moderateImage(file.buffer, file.mimetype);
+      if (ModerationService.shouldBlockPhoto(moderation)) {
+        const error = new Error(
+          'One of your photos does not meet our content guidelines. Please choose a different photo.'
+        );
+        error.statusCode = 422;
+        throw error;
+      }
     }
 
     // Process all gallery photos in parallel
