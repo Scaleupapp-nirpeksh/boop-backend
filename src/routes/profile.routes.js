@@ -44,4 +44,7 @@ router.put(
 // GET /profile/badges — Get badge catalog with earned status
 router.get('/badges', profileController.getBadges);
 
+// DELETE /profile — Permanently delete the account (App Store 5.1.1(v))
+router.delete('/', profileController.deleteAccount);
+
 module.exports = router;

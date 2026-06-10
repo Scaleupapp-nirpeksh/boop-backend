@@ -469,6 +469,90 @@ class ProfileService {
     return user;
   }
 
+  // ─── Delete Account ───────────────────────────────────────────
+
+  /**
+   * Permanently delete an account (App Store Guideline 5.1.1(v)).
+   * Media is hard-deleted from S3; answers/interactions/notifications are
+   * removed; the user document is anonymized as a tombstone so the other
+   * side of historical matches doesn't break.
+   */
+  static async deleteAccount(userId) {
+    const Match = require('../models/Match');
+    const Conversation = require('../models/Conversation');
+    const Answer = require('../models/Answer');
+    const Interaction = require('../models/Interaction');
+    const Notification = require('../models/Notification');
+
+    const user = await User.findById(userId);
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // 1. Hard-delete media from S3
+    const s3Keys = [];
+    (user.photos?.items || []).forEach((p) => s3Keys.push(p.s3Key));
+    const pp = user.photos?.profilePhoto;
+    if (pp) {
+      s3Keys.push(pp.s3Key);
+      s3Keys.push(UploadService._extractS3Key(pp.blurredUrl));
+      s3Keys.push(UploadService._extractS3Key(pp.silhouetteUrl));
+    }
+    if (user.voiceIntro?.s3Key) s3Keys.push(user.voiceIntro.s3Key);
+    await UploadService.cleanupOldFiles(s3Keys.filter(Boolean));
+
+    // 2. Archive matches + deactivate conversations
+    await Match.updateMany(
+      { users: userId, isActive: true },
+      {
+        $set: {
+          isActive: false,
+          stage: 'archived',
+          archiveReason: 'other',
+          archivedAt: new Date(),
+          archivedBy: userId,
+        },
+      }
+    );
+    await Conversation.updateMany({ participants: userId }, { $set: { isActive: false } });
+
+    // 3. Delete personal content
+    await Promise.all([
+      Answer.deleteMany({ userId }),
+      Interaction.deleteMany({ $or: [{ fromUser: userId }, { toUser: userId }] }),
+      Notification.deleteMany({ userId }),
+    ]);
+
+    // 4. Anonymize the user document (tombstone)
+    await User.findByIdAndUpdate(userId, {
+      $set: {
+        phone: `+999${Date.now()}`, // unique tombstone that passes E.164 validation
+        phoneVerified: false,
+        firstName: 'Deleted',
+        isActive: false,
+        'photos.items': [],
+        'photos.totalPhotos': 0,
+        questionsAnswered: 0,
+      },
+      $unset: {
+        bio: 1,
+        voiceIntro: 1,
+        'photos.profilePhoto': 1,
+        fcmToken: 1,
+        refreshToken: 1,
+        location: 1,
+        dateOfBirth: 1,
+        username: 1,
+        badges: 1,
+      },
+    });
+
+    logger.info(`Account deleted and anonymized: ${userId}`);
+    return { deleted: true };
+  }
+
   // ─── Stage Management ─────────────────────────────────────────────────
 
   /**

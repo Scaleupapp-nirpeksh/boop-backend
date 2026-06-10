@@ -185,6 +185,21 @@ const getBadges = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Permanently delete the current user's account
+ * @route   DELETE /api/v1/profile
+ * @access  Private
+ */
+const deleteAccount = asyncHandler(async (req, res) => {
+  await ProfileService.deleteAccount(req.user._id);
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Account deleted',
+    data: { deleted: true },
+  });
+});
+
 module.exports = {
   getProfile,
   updateBasicInfo,
@@ -195,4 +210,5 @@ module.exports = {
   updateFCMToken,
   updateNotificationPreferences,
   getBadges,
+  deleteAccount,
 };
