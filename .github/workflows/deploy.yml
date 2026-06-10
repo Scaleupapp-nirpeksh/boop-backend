@@ -1,39 +1,82 @@
 name: Deploy to EC2
 
+# Deploys via AWS SSM (port 22 is closed — the old SSH path no longer works).
+# Auth is GitHub OIDC → IAM role `unmutee-gha-deploy`; no AWS keys are stored
+# in GitHub. The role is scoped to SendCommand on the one instance.
+# Secrets (.env on the box) are managed manually via SSM sessions, not here.
+
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # required for OIDC
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          envs: FIREBASE_PROJECT_ID,FIREBASE_CLIENT_EMAIL,FIREBASE_PRIVATE_KEY
-          script: |
-            cd /home/ubuntu/boop-backend
-            git pull origin main
-            npm install --production
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx jest tests/unit --forceExit
 
-            # Ensure Firebase env vars are present in .env
-            for VAR in FIREBASE_PROJECT_ID FIREBASE_CLIENT_EMAIL FIREBASE_PRIVATE_KEY; do
-              VAL=$(eval echo \$$VAR)
-              if [ -n "$VAL" ]; then
-                grep -q "^${VAR}=" .env 2>/dev/null && sed -i "/^${VAR}=/d" .env
-                echo "${VAR}=${VAL}" >> .env
-                echo "Set ${VAR} in .env"
-              fi
-            done
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assume AWS role via OIDC (no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::854781667410:role/unmutee-gha-deploy
+          aws-region: ap-south-1
 
-            pm2 restart boop-backend
-            pm2 save
-            echo "Deployed at $(date)"
-        env:
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
-          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      - name: Deploy via SSM
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids i-056f61b97f67460df \
+            --document-name "AWS-RunShellScript" \
+            --comment "GitHub Actions deploy ${GITHUB_SHA::7}" \
+            --parameters '{"commands":[
+              "set -e",
+              "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && git fetch origin && git checkout main && git pull origin main'\''",
+              "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && npm install --omit=dev --no-audit --no-fund'\''",
+              "sudo -u ubuntu bash -c '\''pm2 restart boop-backend --update-env && pm2 save'\'' 2>/dev/null || true",
+              "sleep 5",
+              "curl -sf http://localhost:3000/api/v1/health"
+            ]}' \
+            --query 'Command.CommandId' --output text)
+          echo "SSM command: $CMD_ID"
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" --instance-id i-056f61b97f67460df \
+              --query 'Status' --output text 2>/dev/null || echo Pending)
+            [ "$STATUS" = "Success" ] && break
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "Deploy $STATUS"
+              aws ssm get-command-invocation \
+                --command-id "$CMD_ID" --instance-id i-056f61b97f67460df \
+                --query 'StandardErrorContent' --output text
+              exit 1
+            fi
+            sleep 10
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" --instance-id i-056f61b97f67460df \
+            --query 'StandardOutputContent' --output text | tail -20
+
+      - name: Verify public health
+        run: |
+          sleep 5
+          curl -sf https://api.unmutee.in/api/v1/health | grep -q '"status":"ok"' && echo "api.unmutee.in healthy"
