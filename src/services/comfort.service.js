@@ -3,8 +3,14 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const Game = require('../models/Game');
 const ScoreSnapshot = require('../models/ScoreSnapshot');
-const { COMFORT_WEIGHTS } = require('../utils/constants');
+const { COMFORT_WEIGHTS, COMFORT_LIMITS } = require('../utils/constants');
 const logger = require('../utils/logger');
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** YYYY-MM-DD key for a date in IST */
+const dayKeyIST = (date) =>
+  new Date(new Date(date).getTime() + IST_OFFSET_MS).toISOString().split('T')[0];
 
 // MARK: - Comfort Score Service
 
@@ -12,12 +18,12 @@ const logger = require('../utils/logger');
  * Calculates the comfort score between two matched users.
  *
  * Uses weighted factors from COMFORT_WEIGHTS:
- *  - MESSAGE_VOLUME (0.15): total messages / 50 (capped at 1)
+ *  - MESSAGE_VOLUME (0.15): quality messages / 50 (per-day cap applied, capped at 1)
  *  - MESSAGE_DEPTH (0.20): avg message length / 100 chars (capped at 1)
- *  - VOICE_ENGAGEMENT (0.15): voice messages / 5 (capped at 1)
+ *  - VOICE_ENGAGEMENT (0.15): voice messages / 5 (per-day cap applied, capped at 1)
  *  - GAMES_COMPLETED (0.15): completed games / 3 (capped at 1)
  *  - RESPONSE_CONSISTENCY (0.10): ratio of min/max message counts between users
- *  - ACTIVE_DAYS (0.15): distinct days with messages / 14 (capped at 1)
+ *  - ACTIVE_DAYS (0.15): distinct IST days with quality messages / 14 (capped at 1)
  *  - VULNERABILITY_SIGNALS (0.10): deep game play + photo reveals + long msgs
  *
  * Final score is 0–100.
@@ -42,7 +48,7 @@ class ComfortService {
     const conversation = await Conversation.findOne({ matchId });
     if (!conversation) {
       // No conversation yet — score is 0
-      return ComfortService._saveAndReturn(match, 0, ComfortService._emptyBreakdown());
+      return ComfortService._saveAndReturn(match, 0, ComfortService._emptyBreakdown(), { activeDays: 0, qualityMessages: 0 });
     }
 
     // Fetch all messages in this conversation
@@ -62,12 +68,33 @@ class ComfortService {
     const user1Id = match.users[0].toString();
     const user2Id = match.users[1].toString();
 
-    // ─── Factor 1: MESSAGE_VOLUME ─────────────────────────────────
-    const totalMessages = messages.length;
-    const messageVolumeRaw = Math.min(totalMessages / 50, 1);
+    // ─── Quality filter ───────────────────────────────────────────
+    // Only real conversation counts: text (≥ min length), voice, image.
+    // Never system (boops) or game_invite messages.
+    const COUNTABLE_TYPES = ['text', 'voice', 'image'];
+    const qualityMessages = messages.filter((m) => {
+      if (!COUNTABLE_TYPES.includes(m.type)) return false;
+      if (m.type !== 'text') return true;
+      return (m.content?.text || '').trim().length >= COMFORT_LIMITS.MIN_QUALITY_TEXT_LENGTH;
+    });
 
-    // ─── Factor 2: MESSAGE_DEPTH ──────────────────────────────────
-    const textMessages = messages.filter(
+    // Group by IST calendar day for per-day caps
+    const byDay = new Map();
+    qualityMessages.forEach((m) => {
+      const key = dayKeyIST(m.createdAt);
+      if (!byDay.has(key)) byDay.set(key, []);
+      byDay.get(key).push(m);
+    });
+
+    // ─── Factor 1: MESSAGE_VOLUME (per-day cap) ───────────────────
+    let countedMessages = 0;
+    byDay.forEach((dayMsgs) => {
+      countedMessages += Math.min(dayMsgs.length, COMFORT_LIMITS.MAX_MESSAGES_PER_DAY);
+    });
+    const messageVolumeRaw = Math.min(countedMessages / 50, 1);
+
+    // ─── Factor 2: MESSAGE_DEPTH (quality text only) ──────────────
+    const textMessages = qualityMessages.filter(
       (m) => m.type === 'text' && m.content?.text
     );
     const avgLength =
@@ -77,18 +104,22 @@ class ComfortService {
         : 0;
     const messageDepthRaw = Math.min(avgLength / 100, 1);
 
-    // ─── Factor 3: VOICE_ENGAGEMENT ───────────────────────────────
-    const voiceMessages = messages.filter((m) => m.type === 'voice').length;
-    const voiceEngagementRaw = Math.min(voiceMessages / 5, 1);
+    // ─── Factor 3: VOICE_ENGAGEMENT (per-day cap) ─────────────────
+    let countedVoice = 0;
+    byDay.forEach((dayMsgs) => {
+      const dayVoice = dayMsgs.filter((m) => m.type === 'voice').length;
+      countedVoice += Math.min(dayVoice, COMFORT_LIMITS.MAX_VOICE_PER_DAY);
+    });
+    const voiceEngagementRaw = Math.min(countedVoice / 5, 1);
 
     // ─── Factor 4: GAMES_COMPLETED ────────────────────────────────
     const gamesCompletedRaw = Math.min(completedGames / 3, 1);
 
-    // ─── Factor 5: RESPONSE_CONSISTENCY ───────────────────────────
-    const user1Messages = messages.filter(
+    // ─── Factor 5: RESPONSE_CONSISTENCY (quality messages) ────────
+    const user1Messages = qualityMessages.filter(
       (m) => m.senderId.toString() === user1Id
     ).length;
-    const user2Messages = messages.filter(
+    const user2Messages = qualityMessages.filter(
       (m) => m.senderId.toString() === user2Id
     ).length;
 
@@ -98,27 +129,22 @@ class ComfortService {
       const maxMsgs = Math.max(user1Messages, user2Messages);
       responseConsistencyRaw = minMsgs / maxMsgs;
     } else if (user1Messages > 0 || user2Messages > 0) {
-      // Only one person messaging — low consistency
       responseConsistencyRaw = 0.1;
     }
 
-    // ─── Factor 6: ACTIVE_DAYS ────────────────────────────────────
-    const activeDays = new Set();
-    messages.forEach((m) => {
-      if (m.createdAt) {
-        // Use YYYY-MM-DD as the key
-        const dateStr = new Date(m.createdAt).toISOString().split('T')[0];
-        activeDays.add(dateStr);
-      }
-    });
-    const activeDaysRaw = Math.min(activeDays.size / 14, 1);
+    // ─── Factor 6: ACTIVE_DAYS (IST, quality messages) ────────────
+    const activeDayCount = byDay.size;
+    const activeDaysRaw = Math.min(activeDayCount / 14, 1);
 
-    // ─── Factor 7: VULNERABILITY_SIGNALS ──────────────────────────
-    // Signals: deep game play, long messages (>200 chars), photo shares
-    const longMessages = textMessages.filter(
-      (m) => (m.content.text?.length || 0) > 200
-    ).length;
-    const photoMessages = messages.filter((m) => m.type === 'image').length;
+    // ─── Factor 7: VULNERABILITY_SIGNALS (per-day cap on long msgs)
+    let countedLong = 0;
+    byDay.forEach((dayMsgs) => {
+      const dayLong = dayMsgs.filter(
+        (m) => m.type === 'text' && (m.content?.text?.length || 0) > 200
+      ).length;
+      countedLong += Math.min(dayLong, COMFORT_LIMITS.MAX_LONG_MESSAGES_PER_DAY);
+    });
+    const photoMessages = qualityMessages.filter((m) => m.type === 'image').length;
 
     // Deep game play: count games with deep/vulnerability categories
     const deepGames = await Game.countDocuments({
@@ -130,7 +156,7 @@ class ComfortService {
     });
 
     const vulnerabilityScore =
-      Math.min(longMessages / 10, 0.4) +
+      Math.min(countedLong / 10, 0.4) +
       Math.min(photoMessages / 3, 0.2) +
       Math.min(deepGames / 2, 0.4);
     const vulnerabilitySignalsRaw = Math.min(vulnerabilityScore, 1);
@@ -152,7 +178,7 @@ class ComfortService {
       messageVolume: {
         value: Math.round(messageVolumeRaw * 100),
         weight: COMFORT_WEIGHTS.MESSAGE_VOLUME,
-        detail: `${totalMessages} messages (target: 50)`,
+        detail: `${countedMessages} quality messages counted (target: 50)`,
       },
       messageDepth: {
         value: Math.round(messageDepthRaw * 100),
@@ -162,7 +188,7 @@ class ComfortService {
       voiceEngagement: {
         value: Math.round(voiceEngagementRaw * 100),
         weight: COMFORT_WEIGHTS.VOICE_ENGAGEMENT,
-        detail: `${voiceMessages} voice messages (target: 5)`,
+        detail: `${countedVoice} voice messages counted (target: 5)`,
       },
       gamesCompleted: {
         value: Math.round(gamesCompletedRaw * 100),
@@ -172,21 +198,24 @@ class ComfortService {
       responseConsistency: {
         value: Math.round(responseConsistencyRaw * 100),
         weight: COMFORT_WEIGHTS.RESPONSE_CONSISTENCY,
-        detail: `${user1Messages} vs ${user2Messages} messages`,
+        detail: `${user1Messages} vs ${user2Messages} quality messages`,
       },
       activeDays: {
         value: Math.round(activeDaysRaw * 100),
         weight: COMFORT_WEIGHTS.ACTIVE_DAYS,
-        detail: `${activeDays.size} active days (target: 14)`,
+        detail: `${activeDayCount} active days (target: 14)`,
       },
       vulnerabilitySignals: {
         value: Math.round(vulnerabilitySignalsRaw * 100),
         weight: COMFORT_WEIGHTS.VULNERABILITY_SIGNALS,
-        detail: `${longMessages} long msgs, ${photoMessages} photos, ${deepGames} deep games`,
+        detail: `${countedLong} long msgs, ${photoMessages} photos, ${deepGames} deep games`,
       },
     };
 
-    return ComfortService._saveAndReturn(match, score, breakdown);
+    return ComfortService._saveAndReturn(match, score, breakdown, {
+      activeDays: activeDayCount,
+      qualityMessages: qualityMessages.length,
+    });
   }
 
   // ─── Quick Recalculate (Lightweight) ──────────────────────────
@@ -208,9 +237,10 @@ class ComfortService {
   /**
    * Saves score to match and returns the result object.
    */
-  static async _saveAndReturn(match, score, breakdown) {
+  static async _saveAndReturn(match, score, breakdown, stats = null) {
     match.comfortScore = score;
     match.comfortScoreUpdatedAt = new Date();
+    match.comfortStats = stats || { activeDays: 0, qualityMessages: 0 };
     await match.save();
 
     // Save periodic score snapshot (max one per hour)

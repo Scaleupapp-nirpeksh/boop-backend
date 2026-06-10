@@ -97,6 +97,12 @@ const matchSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Anti-gaming stats persisted by ComfortService (used by the reveal floor)
+    comfortStats: {
+      activeDays: { type: Number, default: 0 },
+      qualityMessages: { type: Number, default: 0 },
+    },
+
     // ─── Archive Info ─────────────────────────────────────────────
     archivedBy: {
       type: mongoose.Schema.Types.ObjectId,

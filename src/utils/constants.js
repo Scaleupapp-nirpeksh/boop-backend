@@ -72,6 +72,15 @@ const COMFORT_WEIGHTS = {
 // Comfort threshold for photo reveal
 const COMFORT_REVEAL_THRESHOLD = 70;
 
+// Anti-gaming limits for the comfort score
+const COMFORT_LIMITS = {
+  MIN_QUALITY_TEXT_LENGTH: 20, // text shorter than this never counts
+  MAX_MESSAGES_PER_DAY: 30, // per-day cap on messages counted toward volume
+  MAX_VOICE_PER_DAY: 3, // per-day cap on voice notes counted
+  MAX_LONG_MESSAGES_PER_DAY: 3, // per-day cap on "vulnerability" long messages
+  MIN_ACTIVE_DAYS_FOR_REVEAL: 3, // reveal locked until this many distinct active days
+};
+
 // Date readiness weights
 const DATE_READINESS_WEIGHTS = {
   COMPATIBILITY: 0.35,
@@ -160,6 +169,7 @@ module.exports = {
   PROFILE_STAGES,
   COMFORT_WEIGHTS,
   COMFORT_REVEAL_THRESHOLD,
+  COMFORT_LIMITS,
   DATE_READINESS_WEIGHTS,
   DEPTH_LEVELS,
   PSYCH_FRAMEWORKS,
