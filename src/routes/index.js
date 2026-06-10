@@ -13,6 +13,7 @@ const gameRoutes = require('./game.routes');
 const notificationRoutes = require('./notification.routes');
 const datePlanRoutes = require('./datePlan.routes');
 const publicRoutes = require('./public.routes');
+const safetyRoutes = require('./safety.routes');
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -25,6 +26,7 @@ router.use('/games', gameRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/date-plans', datePlanRoutes);
 router.use('/public', publicRoutes);
+router.use('/safety', safetyRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
