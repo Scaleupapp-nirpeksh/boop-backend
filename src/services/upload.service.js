@@ -1,4 +1,4 @@
-const { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
@@ -250,6 +250,49 @@ class UploadService {
     );
 
     logger.debug(`Cleaned up ${validKeys.length} old S3 objects`);
+  }
+
+  /**
+   * Permanently delete EVERY object under a user's S3 prefix
+   * (profile, gallery, voice intro, chat media, voice answers).
+   * Used by account deletion. Best-effort: logs and returns the
+   * count it managed to delete.
+   */
+  static async deleteAllUserMedia(userId) {
+    const prefix = `users/${userId}/`;
+    let deleted = 0;
+    let continuationToken;
+
+    try {
+      do {
+        const list = await s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: S3_BUCKET,
+            Prefix: prefix,
+            ContinuationToken: continuationToken,
+          })
+        );
+
+        const objects = (list.Contents || []).map((o) => ({ Key: o.Key }));
+        if (objects.length > 0) {
+          await s3Client.send(
+            new DeleteObjectsCommand({
+              Bucket: S3_BUCKET,
+              Delete: { Objects: objects, Quiet: true },
+            })
+          );
+          deleted += objects.length;
+        }
+
+        continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+      } while (continuationToken);
+
+      logger.info(`S3 purge: deleted ${deleted} objects under ${prefix}`);
+    } catch (error) {
+      logger.error(`S3 purge FAILED for ${prefix} after ${deleted} deletions: ${error.message}`);
+    }
+
+    return deleted;
   }
 
   /**

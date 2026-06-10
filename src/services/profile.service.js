@@ -473,9 +473,16 @@ class ProfileService {
 
   /**
    * Permanently delete an account (App Store Guideline 5.1.1(v)).
-   * Media is hard-deleted from S3; answers/interactions/notifications are
-   * removed; the user document is anonymized as a tombstone so the other
-   * side of historical matches doesn't break.
+   * The user document is anonymized as a tombstone so the other side of
+   * historical matches doesn't break.
+   *
+   * Deliberate v1 retentions (not deleted):
+   *   - Message documents: preserve the other participant's chat history;
+   *     media URLs will 404 after the S3 purge.
+   *   - Reports: moderation audit trail.
+   *   - Blocks: prevents re-matching after re-registration.
+   *   - Games, ScoreSnapshots: aggregate/historical data only.
+   *   - ModerationFlags: audit trail.
    */
   static async deleteAccount(userId) {
     const Match = require('../models/Match');
@@ -483,25 +490,16 @@ class ProfileService {
     const Answer = require('../models/Answer');
     const Interaction = require('../models/Interaction');
     const Notification = require('../models/Notification');
+    const PersonalityAnalysis = require('../models/PersonalityAnalysis');
+    const DatePlan = require('../models/DatePlan');
 
+    // 1. Find user (404 if not found)
     const user = await User.findById(userId);
     if (!user) {
       const error = new Error('User not found');
       error.statusCode = 404;
       throw error;
     }
-
-    // 1. Hard-delete media from S3
-    const s3Keys = [];
-    (user.photos?.items || []).forEach((p) => s3Keys.push(p.s3Key));
-    const pp = user.photos?.profilePhoto;
-    if (pp) {
-      s3Keys.push(pp.s3Key);
-      s3Keys.push(UploadService._extractS3Key(pp.blurredUrl));
-      s3Keys.push(UploadService._extractS3Key(pp.silhouetteUrl));
-    }
-    if (user.voiceIntro?.s3Key) s3Keys.push(user.voiceIntro.s3Key);
-    await UploadService.cleanupOldFiles(s3Keys.filter(Boolean));
 
     // 2. Archive matches + deactivate conversations
     await Match.updateMany(
@@ -523,12 +521,26 @@ class ProfileService {
       Answer.deleteMany({ userId }),
       Interaction.deleteMany({ $or: [{ fromUser: userId }, { toUser: userId }] }),
       Notification.deleteMany({ userId }),
+      PersonalityAnalysis.deleteMany({ userId }),
     ]);
 
-    // 4. Anonymize the user document (tombstone)
+    // 4. Purge safety-contact data the deleting user set on date plans they proposed.
+    //    DatePlan.safetyContact and locationSharing are set by the proposer only
+    //    (proposedBy field); we must not touch fields belonging to the other participant.
+    await DatePlan.updateMany(
+      { proposedBy: userId },
+      { $unset: { safetyContact: 1, locationSharing: 1 } }
+    );
+
+    // 5. Tombstone the user document — anonymize PII.
+    //    Phone uses a digits-only suffix to stay E.164-compatible and collision-proof:
+    //    same-millisecond deletions can't collide because the last 6 hex chars of the
+    //    ObjectId map to a fixed-width integer that is unique per user.
     await User.findByIdAndUpdate(userId, {
       $set: {
-        phone: `+999${Date.now()}`, // unique tombstone that passes E.164 validation
+        // Digits-only tombstone, unique per user (last 6 hex chars of the id
+        // map to a fixed-width number; same-millisecond deletions can't collide)
+        phone: `+999${Date.now()}${String(parseInt(userId.toString().slice(-6), 16)).padStart(8, '0')}`,
         phoneVerified: false,
         firstName: 'Deleted',
         isActive: false,
@@ -548,6 +560,19 @@ class ProfileService {
         badges: 1,
       },
     });
+
+    // 6. Kick any live socket so the ban takes effect immediately (non-critical).
+    try {
+      const socketManager = require('../config/socket');
+      socketManager.disconnectUser(userId);
+    } catch (socketErr) {
+      logger.warn(`Socket kick failed for ${userId}: ${socketErr.message}`);
+    }
+
+    // 7. Best-effort S3 prefix purge — LAST so that if it fails the account is
+    //    already fully deactivated and anonymized.  Media lingering in S3 is the
+    //    better failure mode vs. a half-deleted live account.
+    await UploadService.deleteAllUserMedia(userId);
 
     logger.info(`Account deleted and anonymized: ${userId}`);
     return { deleted: true };
