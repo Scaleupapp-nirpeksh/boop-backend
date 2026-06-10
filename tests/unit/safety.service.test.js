@@ -52,6 +52,7 @@ describe('blockUser', () => {
     expect(match.archiveReason).toBe('blocked');
     expect(match.archivedBy).toBe(A);
     expect(match.save).toHaveBeenCalled();
+    expect(match.archivedAt).toBeInstanceOf(Date);
     expect(Conversation.updateOne).toHaveBeenCalledWith({ matchId: 'm1' }, { isActive: false });
   });
 
@@ -60,6 +61,35 @@ describe('blockUser', () => {
     Block.updateOne.mockResolvedValue({});
     Match.findOne.mockResolvedValue(null);
     await expect(SafetyService.blockUser(A, B)).resolves.toMatchObject({ blockedUserId: B });
+  });
+});
+
+describe('unblockUser', () => {
+  it('deletes the block and returns the unblocked id', async () => {
+    Block.deleteOne.mockResolvedValue({});
+    const result = await SafetyService.unblockUser(A, B);
+    expect(Block.deleteOne).toHaveBeenCalledWith({ blocker: A, blocked: B });
+    expect(result).toEqual({ unblockedUserId: B });
+  });
+});
+
+describe('getBlockedUsers', () => {
+  it('lists blocked users with a fallback name for deleted accounts', async () => {
+    const chain = {
+      populate: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { blocked: { _id: B, firstName: 'Priya' }, createdAt: new Date('2026-06-01') },
+        { blocked: null, createdAt: new Date('2026-06-02') },
+      ]),
+    };
+    Block.find.mockReturnValue(chain);
+
+    const result = await SafetyService.getBlockedUsers(A);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ userId: B, firstName: 'Priya' });
+    expect(result[1].firstName).toBe('Deleted user');
   });
 });
 
