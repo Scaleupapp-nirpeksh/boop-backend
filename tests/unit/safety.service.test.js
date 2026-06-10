@@ -135,6 +135,7 @@ describe('reportUser', () => {
 
   it('creates a pending report', async () => {
     User.findById.mockReturnValue(userChain({ _id: B }));
+    Report.exists.mockResolvedValue(null);
     Report.create.mockResolvedValue({ _id: 'r1', status: 'pending' });
     const result = await SafetyService.reportUser(A, {
       reportedUserId: B,
@@ -156,6 +157,7 @@ describe('reportUser', () => {
 
   it('forwards contentType and messageId for message reports', async () => {
     User.findById.mockReturnValue(userChain({ _id: B }));
+    Report.exists.mockResolvedValue(null);
     Report.create.mockResolvedValue({ _id: 'r2', status: 'pending' });
     await SafetyService.reportUser(A, {
       reportedUserId: B,
@@ -166,5 +168,13 @@ describe('reportUser', () => {
     expect(Report.create).toHaveBeenCalledWith(
       expect.objectContaining({ contentType: 'message', messageId: 'msg1' })
     );
+  });
+
+  it('409s when a pending report already exists', async () => {
+    User.findById.mockReturnValue(userChain({ _id: B }));
+    Report.exists.mockResolvedValue({ _id: 'r0' });
+    await expect(
+      SafetyService.reportUser(A, { reportedUserId: B, reason: 'spam' })
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 });

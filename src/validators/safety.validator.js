@@ -15,4 +15,8 @@ const reportUserSchema = Joi.object({
   messageId: Joi.string().hex().length(24).allow(null),
 });
 
-module.exports = { blockUserSchema, reportUserSchema };
+const userIdParamSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+});
+
+module.exports = { blockUserSchema, reportUserSchema, userIdParamSchema };

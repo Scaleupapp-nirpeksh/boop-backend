@@ -137,6 +137,20 @@ class SafetyService {
       throw error;
     }
 
+    // One open report per (reporter, target) — prevents queue flooding and
+    // weaponised mass-reporting. A new report is allowed once the previous
+    // one is resolved.
+    const existing = await Report.exists({
+      reporter: reporterId,
+      reported: reportedUserId,
+      status: 'pending',
+    });
+    if (existing) {
+      const error = new Error('You have already reported this user. Our team is reviewing it.');
+      error.statusCode = 409;
+      throw error;
+    }
+
     const report = await Report.create({
       reporter: reporterId,
       reported: reportedUserId,
