@@ -103,6 +103,15 @@ const banUser = asyncHandler(async (req, res) => {
     error.statusCode = 404;
     throw error;
   }
+
+  // Kill any live realtime session — bans take effect immediately
+  try {
+    const socketManager = require('../config/socket');
+    socketManager.disconnectUser(req.params.id);
+  } catch (_) {
+    // Non-critical — auth middleware rejects banned users on next request anyway
+  }
+
   res.status(200).json({ success: true, statusCode: 200, message: 'User banned', data: { user } });
 });
 

@@ -352,6 +352,20 @@ class SocketManager {
   getIO() {
     return this.io;
   }
+
+  /**
+   * Force-disconnect all active sockets for a given userId.
+   * Used when a user is banned so the ban takes effect immediately
+   * rather than waiting for JWT expiry.
+   */
+  disconnectUser(userId) {
+    const socketIds = this.userSockets.get(userId.toString());
+    if (!socketIds) return;
+    for (const socketId of socketIds) {
+      const socket = this.io?.sockets?.sockets?.get(socketId);
+      if (socket) socket.disconnect(true);
+    }
+  }
 }
 
 // Export singleton instance
