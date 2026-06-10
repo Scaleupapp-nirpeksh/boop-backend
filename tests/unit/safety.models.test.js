@@ -35,4 +35,10 @@ describe('safety models', () => {
     expect(err.errors.contentType).toBeDefined();
     expect(err.errors.userId).toBeDefined();
   });
+
+  it('ModerationFlag defaults to pending', () => {
+    const flag = new ModerationFlag({ contentType: 'message', userId: oid() });
+    expect(flag.validateSync()).toBeUndefined();
+    expect(flag.status).toBe('pending');
+  });
 });

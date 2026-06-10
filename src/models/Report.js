@@ -16,7 +16,11 @@ const reportSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Moderation queue: fetch pending/actioned reports ordered by age
 reportSchema.index({ status: 1, createdAt: -1 });
+// Look up all reports made against a specific user
 reportSchema.index({ reported: 1 });
+// Duplicate-report guard: check whether a user has already reported someone
+reportSchema.index({ reporter: 1, reported: 1 });
 
 module.exports = mongoose.model('Report', reportSchema);

@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 
 const moderationFlagSchema = new mongoose.Schema(
   {
+    // Intentionally narrower than Report's contentType — the AI moderation pipeline
+    // only reviews messages and photos; profile reports come from users via Report.
     contentType: { type: String, enum: ['message', 'photo'], required: true },
     // Owner of the flagged content
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -18,6 +20,9 @@ const moderationFlagSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Moderation queue: fetch pending/actioned flags ordered by age
 moderationFlagSchema.index({ status: 1, createdAt: -1 });
+// Look up all flags raised against a specific user's content
+moderationFlagSchema.index({ userId: 1 });
 
 module.exports = mongoose.model('ModerationFlag', moderationFlagSchema);
