@@ -1,7 +1,7 @@
 const OpenAI = require('openai');
 const logger = require('../utils/logger');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
 
 // Categories that auto-hide content immediately (review still happens)
 const SEVERE_CATEGORIES = [
@@ -70,7 +70,7 @@ class ModerationService {
     if (!message?.content?.text) return;
 
     const result = await ModerationService.moderateText(message.content.text);
-    if (!result.flagged) return;
+    if (!result.flagged && !result.severe) return;
 
     const ModerationFlag = require('../models/ModerationFlag');
     await ModerationFlag.create({
@@ -81,7 +81,7 @@ class ModerationService {
       categories: result.categories,
       severe: result.severe,
       autoHidden: result.severe,
-      excerpt: message.content.text.slice(0, 300),
+      excerpt: [...message.content.text].slice(0, 300).join(''),
     });
 
     if (result.severe) {

@@ -95,4 +95,18 @@ describe('reviewMessage', () => {
     await ModerationService.reviewMessage(message);
     expect(ModerationFlag.create).not.toHaveBeenCalled();
   });
+
+  it('truncates excerpts by code point, not UTF-16 unit', async () => {
+    const fire = '🔥'.repeat(200); // 400 UTF-16 units, 200 code points
+    mockCreate.mockResolvedValue({
+      results: [{ flagged: true, categories: { harassment: true } }],
+    });
+    ModerationFlag.create.mockResolvedValue({});
+
+    await ModerationService.reviewMessage({ ...message, content: { text: fire } });
+
+    const excerpt = ModerationFlag.create.mock.calls[0][0].excerpt;
+    expect([...excerpt]).toHaveLength(200);
+    expect(excerpt.includes('�')).toBe(false);
+  });
 });
