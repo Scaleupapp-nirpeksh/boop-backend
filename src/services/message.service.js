@@ -4,6 +4,7 @@ const Match = require('../models/Match');
 const { CONNECTION_STAGES, REACTION_EMOJIS } = require('../utils/constants');
 const UploadService = require('./upload.service');
 const SafetyService = require('./safety.service');
+const { S3_BASE_URL } = require('../config/s3');
 const logger = require('../utils/logger');
 
 // MARK: - Message Service
@@ -204,6 +205,18 @@ class MessageService {
 
     if ((type === 'voice' || type === 'image') && !mediaUrl) {
       const error = new Error(`Media URL is required for ${type} messages`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (
+      (type === 'voice' || type === 'image') &&
+      mediaUrl &&
+      !mediaUrl.startsWith(S3_BASE_URL)
+    ) {
+      // Media must come from our own upload pipeline (which moderates images);
+      // arbitrary external URLs would bypass moderation entirely.
+      const error = new Error('Media must be uploaded through the app');
       error.statusCode = 400;
       throw error;
     }
