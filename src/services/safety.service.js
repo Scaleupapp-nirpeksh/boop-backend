@@ -39,7 +39,10 @@ class SafetyService {
       { upsert: true }
     );
 
-    // Archive any active match between the pair and deactivate its conversation
+    // NOTE: the block write and match archival below are not atomic (no
+    // transactions in this codebase yet). A concurrent message sent between
+    // the two operations is still blocked by the Block record itself via
+    // isBlockedEither, so the practical impact is negligible.
     const match = await Match.findOne({
       users: { $all: [blockerId, blockedId] },
       isActive: true,
@@ -124,6 +127,13 @@ class SafetyService {
     if (!REPORT_REASONS.includes(reason)) {
       const error = new Error(`Invalid reason. Allowed: ${REPORT_REASONS.join(', ')}`);
       error.statusCode = 400;
+      throw error;
+    }
+
+    const target = await User.findById(reportedUserId).select('_id').lean();
+    if (!target) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
       throw error;
     }
 

@@ -13,6 +13,7 @@ const User = require('../../src/models/User');
 const Match = require('../../src/models/Match');
 const Conversation = require('../../src/models/Conversation');
 const SafetyService = require('../../src/services/safety.service');
+const { CONNECTION_STAGES } = require('../../src/utils/constants');
 
 const A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -47,7 +48,7 @@ describe('blockUser', () => {
       { $setOnInsert: { blocker: A, blocked: B } },
       { upsert: true }
     );
-    expect(match.stage).toBe('archived');
+    expect(match.stage).toBe(CONNECTION_STAGES.ARCHIVED);
     expect(match.isActive).toBe(false);
     expect(match.archiveReason).toBe('blocked');
     expect(match.archivedBy).toBe(A);
@@ -133,6 +134,7 @@ describe('reportUser', () => {
   });
 
   it('creates a pending report', async () => {
+    User.findById.mockReturnValue(userChain({ _id: B }));
     Report.create.mockResolvedValue({ _id: 'r1', status: 'pending' });
     const result = await SafetyService.reportUser(A, {
       reportedUserId: B,
@@ -143,5 +145,26 @@ describe('reportUser', () => {
       expect.objectContaining({ reporter: A, reported: B, reason: 'harassment' })
     );
     expect(result).toEqual({ reportId: 'r1', status: 'pending' });
+  });
+
+  it('404s when the reported user does not exist', async () => {
+    User.findById.mockReturnValue(userChain(null));
+    await expect(
+      SafetyService.reportUser(A, { reportedUserId: B, reason: 'spam' })
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it('forwards contentType and messageId for message reports', async () => {
+    User.findById.mockReturnValue(userChain({ _id: B }));
+    Report.create.mockResolvedValue({ _id: 'r2', status: 'pending' });
+    await SafetyService.reportUser(A, {
+      reportedUserId: B,
+      reason: 'inappropriate_messages',
+      contentType: 'message',
+      messageId: 'msg1',
+    });
+    expect(Report.create).toHaveBeenCalledWith(
+      expect.objectContaining({ contentType: 'message', messageId: 'msg1' })
+    );
   });
 });
