@@ -121,6 +121,18 @@ const LOVE_LANGUAGES = [
 // Allowed reaction emojis
 const REACTION_EMOJIS = ['❤️', '😊', '😂', '😍', '👍', '🔥', '😮', '😢'];
 
+// User report reasons (trust & safety)
+const REPORT_REASONS = [
+  'harassment',
+  'inappropriate_messages',
+  'inappropriate_photos',
+  'fake_profile',
+  'underage',
+  'spam',
+  'safety_concern',
+  'other',
+];
+
 // Game types
 const GAME_TYPES = {
   WOULD_YOU_RATHER: 'would_you_rather',
@@ -154,6 +166,7 @@ module.exports = {
   ATTACHMENT_STYLES,
   LOVE_LANGUAGES,
   REACTION_EMOJIS,
+  REPORT_REASONS,
   GAME_TYPES,
   MATCH_TIERS,
 };
