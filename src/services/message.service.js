@@ -3,6 +3,7 @@ const Message = require('../models/Message');
 const Match = require('../models/Match');
 const { CONNECTION_STAGES, REACTION_EMOJIS } = require('../utils/constants');
 const UploadService = require('./upload.service');
+const SafetyService = require('./safety.service');
 const logger = require('../utils/logger');
 
 // MARK: - Message Service
@@ -183,6 +184,14 @@ class MessageService {
     if (!conversation) {
       const error = new Error('Conversation not found');
       error.statusCode = 404;
+      throw error;
+    }
+
+    // ─── Block enforcement ────────────────────────────────────────
+    const otherParticipantId = conversation.getOtherParticipantId(senderId);
+    if (await SafetyService.isBlockedEither(senderId, otherParticipantId)) {
+      const error = new Error('You cannot message this user');
+      error.statusCode = 403;
       throw error;
     }
 

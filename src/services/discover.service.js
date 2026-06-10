@@ -7,6 +7,7 @@ const CompatibilityService = require('./compatibility.service');
 const MessageService = require('./message.service');
 const UploadService = require('./upload.service');
 const NotificationService = require('./notification.service');
+const SafetyService = require('./safety.service');
 const { CONNECTION_STAGES } = require('../utils/constants');
 const logger = require('../utils/logger');
 const cache = require('../utils/cache');
@@ -53,6 +54,10 @@ class DiscoverService {
     ).lean();
     const excludeIds = interactedDocs.map((d) => d.toUser);
     excludeIds.push(currentUser._id); // Exclude self
+
+    // Exclude anyone involved in a block with this user (either direction)
+    const blockedIds = await SafetyService.getBlockedIdSet(userId);
+    blockedIds.forEach((id) => excludeIds.push(id));
 
     // 2. Build gender preference filter (bidirectional)
     const genderFilter = this._buildGenderFilter(currentUser);
@@ -141,6 +146,13 @@ class DiscoverService {
     if (fromUserId.toString() === toUserId.toString()) {
       const error = new Error('You cannot like yourself');
       error.statusCode = 400;
+      throw error;
+    }
+
+    // Blocked pairs can't interact — present as not-found to avoid revealing the block
+    if (await SafetyService.isBlockedEither(fromUserId, toUserId)) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
       throw error;
     }
 
