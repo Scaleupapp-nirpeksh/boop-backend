@@ -1,6 +1,6 @@
 const Match = require('../models/Match');
 const User = require('../models/User');
-const { CONNECTION_STAGES, STAGE_TRANSITIONS, COMFORT_REVEAL_THRESHOLD, DATE_READINESS_WEIGHTS } = require('../utils/constants');
+const { CONNECTION_STAGES, STAGE_TRANSITIONS, COMFORT_REVEAL_THRESHOLD, COMFORT_LIMITS, DATE_READINESS_WEIGHTS } = require('../utils/constants');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const Game = require('../models/Game');
@@ -160,9 +160,11 @@ class MatchService {
       try {
         const ComfortService = require('./comfort.service');
         await ComfortService.calculateComfortScore(matchId);
-        await match.constructor.findById(matchId).then((updated) => {
-          if (updated) match.comfortScore = updated.comfortScore;
-        });
+        const updated = await match.constructor.findById(matchId);
+        if (updated) {
+          match.comfortScore = updated.comfortScore;
+          match.comfortStats = updated.comfortStats;
+        }
       } catch (_) {
         // If recalculation fails, use existing score
       }
@@ -171,6 +173,17 @@ class MatchService {
       if (match.comfortScore < COMFORT_REVEAL_THRESHOLD) {
         const error = new Error(
           `Your comfort level (${match.comfortScore}/100) hasn't reached the threshold (${COMFORT_REVEAL_THRESHOLD}). Keep chatting and playing games!`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Anti-gaming floor: a high score earned in a single burst isn't
+      // enough — the connection must span real days (see COMFORT_LIMITS).
+      const activeDays = match.comfortStats?.activeDays || 0;
+      if (activeDays < COMFORT_LIMITS.MIN_ACTIVE_DAYS_FOR_REVEAL) {
+        const error = new Error(
+          `You two are moving fast! Reveal unlocks after ${COMFORT_LIMITS.MIN_ACTIVE_DAYS_FOR_REVEAL} days of real conversation (you're on day ${activeDays}).`
         );
         error.statusCode = 400;
         throw error;
@@ -335,7 +348,10 @@ class MatchService {
         const ComfortService = require('./comfort.service');
         await ComfortService.calculateComfortScore(matchId);
         const updated = await Match.findById(matchId);
-        if (updated) match.comfortScore = updated.comfortScore;
+        if (updated) {
+          match.comfortScore = updated.comfortScore;
+          match.comfortStats = updated.comfortStats;
+        }
       } catch (_) {
         // Use existing score if recalculation fails
       }
@@ -343,6 +359,17 @@ class MatchService {
       if (match.comfortScore < COMFORT_REVEAL_THRESHOLD) {
         const error = new Error(
           `Your comfort level (${match.comfortScore}/100) hasn't reached the threshold (${COMFORT_REVEAL_THRESHOLD}). Keep chatting and playing games!`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      // Anti-gaming floor: a high score earned in a single burst isn't
+      // enough — the connection must span real days (see COMFORT_LIMITS).
+      const activeDays = match.comfortStats?.activeDays || 0;
+      if (activeDays < COMFORT_LIMITS.MIN_ACTIVE_DAYS_FOR_REVEAL) {
+        const error = new Error(
+          `You two are moving fast! Reveal unlocks after ${COMFORT_LIMITS.MIN_ACTIVE_DAYS_FOR_REVEAL} days of real conversation (you're on day ${activeDays}).`
         );
         error.statusCode = 400;
         throw error;

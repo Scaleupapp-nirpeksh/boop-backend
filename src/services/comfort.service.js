@@ -78,7 +78,10 @@ class ComfortService {
       return (m.content?.text || '').trim().length >= COMFORT_LIMITS.MIN_QUALITY_TEXT_LENGTH;
     });
 
-    // Group by IST calendar day for per-day caps
+    // Group by IST calendar day for per-day caps.
+    // Note: caps pool BOTH users' messages per day (combined, not per-user) — a
+    // deliberate choice so a pair can't double the counted volume by each sending
+    // up to the cap independently.
     const byDay = new Map();
     qualityMessages.forEach((m) => {
       const key = dayKeyIST(m.createdAt);
@@ -146,12 +149,13 @@ class ComfortService {
     });
     const photoMessages = qualityMessages.filter((m) => m.type === 'image').length;
 
-    // Deep game play: count games with deep/vulnerability categories
+    // Deep game play: count games with deep/vulnerability categories.
+    // This list must stay in sync with the categories defined in src/scripts/gameContent.js.
     const deepGames = await Game.countDocuments({
       matchId,
       status: 'completed',
       'rounds.prompt.category': {
-        $in: ['vulnerability', 'self-discovery', 'growth', 'connection'],
+        $in: ['vulnerability', 'self-discovery', 'growth', 'connection', 'emotional'],
       },
     });
 
@@ -203,7 +207,7 @@ class ComfortService {
       activeDays: {
         value: Math.round(activeDaysRaw * 100),
         weight: COMFORT_WEIGHTS.ACTIVE_DAYS,
-        detail: `${activeDayCount} active days (target: 14)`,
+        detail: `${activeDayCount} active days (IST, target: 14)`,
       },
       vulnerabilitySignals: {
         value: Math.round(vulnerabilitySignalsRaw * 100),

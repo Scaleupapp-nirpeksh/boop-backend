@@ -61,6 +61,7 @@ describe('comfort score hardening', () => {
 
     const { score } = await ComfortService.calculateComfortScore('match1');
     expect(score).toBeLessThan(70);
+    expect(score).toBeLessThan(30);
   });
 
   it('a single-day flood of quality messages cannot reach the threshold', async () => {
@@ -74,6 +75,8 @@ describe('comfort score hardening', () => {
 
     const { score } = await ComfortService.calculateComfortScore('match1');
     expect(score).toBeLessThan(70);
+    expect(score).toBeGreaterThan(40);
+    expect(score).toBeLessThan(60);
   });
 
   it('system messages (boops) never count', async () => {
@@ -103,6 +106,7 @@ describe('comfort score hardening', () => {
 
     const { score } = await ComfortService.calculateComfortScore('match1');
     expect(score).toBeGreaterThanOrEqual(70);
+    expect(score).toBeGreaterThan(75);
   });
 
   it('persists activeDays and qualityMessages for the reveal floor', async () => {
