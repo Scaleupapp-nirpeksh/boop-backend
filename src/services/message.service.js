@@ -227,6 +227,16 @@ class MessageService {
     // Populate sender info for the response
     await message.populate('senderId', 'firstName');
 
+    // ─── Content moderation (async, never blocks send) ───────────
+    if (type === 'text') {
+      try {
+        const ModerationService = require('./moderation.service');
+        ModerationService.reviewMessage(message).catch(() => {});
+      } catch (_) {
+        // Non-critical
+      }
+    }
+
     // ─── Auto-transition: MUTUAL → CONNECTING on first message ──
     try {
       const match = await Match.findById(conversation.matchId);
