@@ -624,15 +624,14 @@ class ProfileService {
   }
 
   static async _rebuildProfilePhotoFromGalleryItem(item, userId) {
-    const response = await fetch(item.url);
-    if (!response.ok) {
-      const error = new Error('Could not fetch selected photo for profile processing');
-      error.statusCode = 500;
+    const s3Key = item.s3Key || UploadService._extractS3Key(item.url);
+    if (!s3Key) {
+      const error = new Error('Could not locate the selected photo for profile processing');
+      error.statusCode = 400;
       throw error;
     }
-
-    const arrayBuffer = await response.arrayBuffer();
-    return UploadService.processProfilePhoto(Buffer.from(arrayBuffer), userId);
+    const buffer = await UploadService.getObjectBuffer(s3Key);
+    return UploadService.processProfilePhoto(buffer, userId);
   }
 }
 

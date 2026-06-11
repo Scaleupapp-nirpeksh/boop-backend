@@ -67,6 +67,14 @@ class UploadService {
     return getSignedUrl(s3Client, command, { expiresIn });
   }
 
+  /** Fetch an object's raw bytes from S3 by key via the authenticated client. */
+  static async getObjectBuffer(s3Key) {
+    const res = await s3Client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  }
+
   /**
    * Convert a stored S3 URL or key into an accessible URL.
    * This keeps the API usable even when the bucket is private.
