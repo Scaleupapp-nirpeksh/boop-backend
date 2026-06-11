@@ -887,6 +887,16 @@ async function seed() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ Connected to MongoDB');
 
+    // Canonical onboarding set (single-sourced; overrides any inline flags).
+    // A mix: 5 quick single_choice + 3 text questions (voice/type), one per
+    // dimension, all day-1 — fast, but showcases the voice-first brand.
+    //   1  emotional_vulnerability (text)   3  attachment (single)
+    //   6  life_vision (text, "perfect Sunday")   7  conflict (single)
+    //   10 love_expression (text)   11 intimacy (single)
+    //   13 lifestyle (single)   15 growth (single)
+    const ONBOARDING_SET = [1, 3, 6, 7, 10, 11, 13, 15];
+    questions.forEach((q) => { q.isOnboarding = ONBOARDING_SET.includes(q.questionNumber); });
+
     // Clear existing questions
     const deleteResult = await Question.deleteMany({});
     console.log(`🗑️  Cleared ${deleteResult.deletedCount} existing questions`);
@@ -924,10 +934,11 @@ async function seed() {
       });
 
     // Summary of onboarding questions (shown before profile is complete).
-    // All onboarding questions should be single_choice (tap-only, lowest friction).
+    // Intentional mix: quick single_choice + a few text (voice/type) questions.
     const onboarding = questions.filter((q) => q.isOnboarding);
-    const tapOnly = onboarding.every((q) => q.questionType === 'single_choice');
-    console.log(`\n🚀 Onboarding set (${onboarding.length}, ${tapOnly ? 'tap-only ✅' : 'MIXED — has typing ⚠️'}): [${onboarding.map((q) => q.questionNumber).join(', ')}]`);
+    const nSingle = onboarding.filter((q) => q.questionType === 'single_choice').length;
+    const nText = onboarding.filter((q) => q.questionType === 'text').length;
+    console.log(`\n🚀 Onboarding set (${onboarding.length}: ${nSingle} tap + ${nText} voice/type): [${onboarding.map((q) => q.questionNumber).join(', ')}]`);
     onboarding
       .sort((a, b) => a.questionNumber - b.questionNumber)
       .forEach((q) => {
