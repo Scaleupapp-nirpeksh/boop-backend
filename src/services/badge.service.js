@@ -192,8 +192,8 @@ class BadgeService {
       }
     }
 
-    // Personality Unlocked (has personality analysis — check questionsAnswered >= 15 as proxy)
-    if (!earnedKeys.has('personality_unlocked') && (user.questionsAnswered || 0) >= 15) {
+    // Personality Unlocked (has personality analysis — reveal fires at 8 answers)
+    if (!earnedKeys.has('personality_unlocked') && (user.questionsAnswered || 0) >= 8) {
       // Check if analysis was actually generated
       try {
         const cache = require('../utils/cache');

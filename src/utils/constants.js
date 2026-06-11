@@ -55,6 +55,7 @@ const PROFILE_STAGES = {
   INCOMPLETE: 'incomplete',
   VOICE_PENDING: 'voice_pending',
   QUESTIONS_PENDING: 'questions_pending',
+  PREVIEW: 'preview',
   READY: 'ready',
 };
 

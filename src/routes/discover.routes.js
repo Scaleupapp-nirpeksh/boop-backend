@@ -3,7 +3,7 @@ const router = express.Router();
 const discoverController = require('../controllers/discover.controller');
 const {
   authenticate,
-  requireCompleteProfile,
+  requireOnboarded,
 } = require('../middleware/auth.middleware');
 const {
   validate,
@@ -11,9 +11,12 @@ const {
   passSchema,
 } = require('../validators/discover.validator');
 
-// All discover routes require auth + complete profile
+// All discover routes require auth + an onboarded profile (preview OR ready).
+// 'preview' users can browse candidates/stats/pending and reach POST /like,
+// where the service layer enforces the stricter 'ready' gate and returns the
+// typed `complete_setup_required` code that launches the client's connect-setup.
 router.use(authenticate);
-router.use(requireCompleteProfile);
+router.use(requireOnboarded);
 
 // GET /discover/stats — Dashboard statistics
 router.get('/stats', discoverController.getStats);

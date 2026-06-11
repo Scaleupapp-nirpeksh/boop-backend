@@ -158,4 +158,35 @@ const requireCompleteProfile = (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, optionalAuth, requireCompleteProfile };
+/**
+ * Middleware to require an onboarded profile (profileStage === 'preview' OR 'ready').
+ * Blocks users still in onboarding ('incomplete', 'voice_pending', 'questions_pending').
+ * Must be used after `authenticate` middleware.
+ *
+ * Use this (instead of requireCompleteProfile) on routers where 'preview' users must
+ * be allowed through — e.g. discover, so preview users can browse candidates AND reach
+ * POST /like, where the service layer enforces the stricter 'ready' gate and returns the
+ * typed `complete_setup_required` code that drives the client's connect-setup flow.
+ */
+const requireOnboarded = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      statusCode: 401,
+      message: 'Authentication required',
+    });
+  }
+
+  if (req.user.profileStage !== 'preview' && req.user.profileStage !== 'ready') {
+    return res.status(403).json({
+      success: false,
+      statusCode: 403,
+      message: 'Profile is not complete. Please finish setting up your profile.',
+      data: { currentStage: req.user.profileStage },
+    });
+  }
+
+  next();
+};
+
+module.exports = { authenticate, optionalAuth, requireCompleteProfile, requireOnboarded };
