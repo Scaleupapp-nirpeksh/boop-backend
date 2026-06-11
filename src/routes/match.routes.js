@@ -28,6 +28,14 @@ router.get(
   matchController.getMatchById
 );
 
+// ─── Partner Profile (style / personality depth) ────────────────
+
+router.get(
+  '/:matchId/partner',
+  validateParams(matchIdParamSchema),
+  matchController.getPartnerProfile
+);
+
 // ─── Stage Progression ──────────────────────────────────────────
 
 router.patch(

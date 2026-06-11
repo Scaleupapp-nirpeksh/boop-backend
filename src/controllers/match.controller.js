@@ -45,6 +45,25 @@ const getMatchById = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Get match partner's profile depth (archetype, facets, showcase answers)
+ * @route   GET /api/v1/matches/:matchId/partner
+ * @access  Private (requires complete profile)
+ */
+const getPartnerProfile = asyncHandler(async (req, res) => {
+  const result = await MatchService.getPartnerProfile(
+    req.user._id,
+    req.params.matchId
+  );
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Partner profile retrieved',
+    data: result,
+  });
+});
+
+/**
  * @desc    Advance match to next stage
  * @route   PATCH /api/v1/matches/:matchId/advance
  * @access  Private (requires complete profile)
@@ -644,6 +663,7 @@ const getCompatibilityDeepDive = asyncHandler(async (req, res) => {
 module.exports = {
   getMatches,
   getMatchById,
+  getPartnerProfile,
   advanceStage,
   archiveMatch,
   requestReveal,

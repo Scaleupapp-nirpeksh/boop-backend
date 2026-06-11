@@ -796,6 +796,138 @@ Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overal
     };
   }
 
+  // ─── Partner Profile (Style / Personality Depth) ─────────────
+
+  /**
+   * Returns the match partner's profile depth: identity basics, voice intro,
+   * stage-gated photos, personality archetype + facet scores, and showcase
+   * answers. Match-scoped: only a participant of an ACTIVE match can view it
+   * (blocked pairs are archived on block, so they 404 here like elsewhere).
+   *
+   * PRIVACY: never exposes the analysis `summary`, `numerology`, or raw
+   * answer history — only archetype, facet key/title/score, and the same
+   * showcase answers discover already serves.
+   */
+  static async getPartnerProfile(userId, matchId) {
+    const match = await Match.findOne({
+      _id: matchId,
+      users: userId,
+      isActive: true,
+    })
+      .populate(
+        'users',
+        'firstName dateOfBirth location bio voiceIntro photos questionsAnswered'
+      )
+      .lean();
+
+    if (!match) {
+      const error = new Error('Match not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const partner = match.users.find(
+      (u) => u._id.toString() !== userId.toString()
+    );
+
+    if (!partner) {
+      const error = new Error('Match not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Same age derivation used across match/discover formatting
+    const age = partner.dateOfBirth
+      ? Math.floor(
+          (Date.now() - new Date(partner.dateOfBirth).getTime()) /
+            (365.25 * 24 * 60 * 60 * 1000)
+        )
+      : null;
+
+    // Photo visibility mirrors getMatchById/getMatches: clear photos only
+    // once the comfort-reveal has happened (REVEALED or DATING stage).
+    const photosRevealed =
+      match.stage === CONNECTION_STAGES.REVEALED ||
+      match.stage === CONNECTION_STAGES.DATING;
+
+    const [audioUrl, blurredUrl, silhouetteUrl, clearUrl] = await Promise.all([
+      UploadService.getAccessibleUrl(partner.voiceIntro?.audioUrl || null),
+      UploadService.getAccessibleUrl(partner.photos?.profilePhoto?.blurredUrl || null),
+      UploadService.getAccessibleUrl(partner.photos?.profilePhoto?.silhouetteUrl || null),
+      photosRevealed
+        ? UploadService.getAccessibleUrl(
+            partner.photos?.profilePhoto?.url || partner.photos?.profilePhoto?.s3Key || null
+          )
+        : Promise.resolve(null),
+    ]);
+
+    // Latest completed personality analysis (same lookup as personality.service)
+    const PersonalityAnalysis = require('../models/PersonalityAnalysis');
+    const analysis = await PersonalityAnalysis.findOne({
+      userId: partner._id,
+      status: 'completed',
+    })
+      .sort({ triggeredAtCount: -1 })
+      .lean();
+
+    let archetype = null;
+    let facets = [];
+
+    if (analysis) {
+      const { findByCode } = require('../utils/archetypes');
+      const catalogEntry = findByCode(analysis.archetypeCode);
+
+      if (catalogEntry) {
+        const PersonalityService = require('./personality.service');
+        archetype = {
+          code: catalogEntry.code,
+          number: catalogEntry.number,
+          name: catalogEntry.name,
+          essence: catalogEntry.essence,
+          rarityPercent: await PersonalityService.getArchetypeRarity(catalogEntry.code),
+        };
+      }
+
+      // key/title/score ONLY — descriptions/emoji (and summary/numerology) stay private
+      facets = (analysis.facets || []).map((f) => ({
+        key: f.key,
+        title: f.title,
+        score: f.score,
+      }));
+    }
+
+    // Showcase answers: reuse the cached discover util, trimmed to the contract
+    const DiscoverService = require('./discover.service');
+    const showcase = await DiscoverService._getShowcaseAnswers(partner._id, 6);
+    const showcaseAnswers = (showcase || []).map((s) => ({
+      questionText: s.questionText,
+      answer: s.answer,
+    }));
+
+    return {
+      partner: {
+        userId: partner._id,
+        firstName: partner.firstName,
+        age,
+        city: partner.location?.city || null,
+        bio: partner.bio?.text || null,
+        voiceIntro: {
+          audioUrl,
+          duration: partner.voiceIntro?.duration || null,
+        },
+        photos: {
+          blurredUrl,
+          silhouetteUrl,
+          clearUrl,
+        },
+        archetype,
+        facets,
+        questionsAnswered: partner.questionsAnswered || 0,
+        showcaseAnswers,
+      },
+    };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────
 
   /**
