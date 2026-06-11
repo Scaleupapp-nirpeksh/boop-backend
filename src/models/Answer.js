@@ -23,6 +23,21 @@ const answerSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Snapshot of the question at submit time — survives catalog reseeds
+    // so history can still render if the question doc disappears.
+    questionTextSnapshot: {
+      type: String,
+      default: null,
+    },
+    dimensionSnapshot: {
+      type: String,
+      default: null,
+    },
+    questionTypeSnapshot: {
+      type: String,
+      default: null,
+    },
+
     // Text-based answer (for 'text' type questions)
     textAnswer: {
       type: String,

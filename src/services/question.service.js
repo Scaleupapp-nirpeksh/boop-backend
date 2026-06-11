@@ -112,6 +112,10 @@ class QuestionService {
       userId,
       questionId: question._id,
       questionNumber,
+      // Snapshot question metadata so history survives catalog reseeds
+      questionTextSnapshot: question.questionText || null,
+      dimensionSnapshot: question.dimension || null,
+      questionTypeSnapshot: question.questionType || null,
       textAnswer: answerData.textAnswer || null,
       selectedOption: answerData.selectedOption || null,
       selectedOptions: answerData.selectedOptions || [],
@@ -316,15 +320,18 @@ class QuestionService {
       return {
         id: answer._id,
         questionNumber: answer.questionNumber,
-        questionText: question.questionText || '',
-        dimension: question.dimension || 'unknown',
-        questionType: question.questionType || 'text',
+        // Fallback chain: live question → submit-time snapshot → seasonal label
+        // (orphaned answers from removed seasonal drops group under 'seasonal')
+        questionText: question.questionText || answer.questionTextSnapshot || '',
+        dimension: question.dimension || answer.dimensionSnapshot || 'seasonal',
+        questionType: question.questionType || answer.questionTypeSnapshot || 'text',
         textAnswer: answer.textAnswer,
         selectedOption: answer.selectedOption,
         selectedOptions: answer.selectedOptions,
         followUpAnswer: answer.followUpAnswer,
         voiceAnswerUrl: answer.voiceAnswerUrl || null,
-        voiceAnswerTranscript: answer.voiceAnswerTranscript || null,
+        // Legacy voice answers carry their transcript only in textAnswer
+        voiceAnswerTranscript: answer.voiceAnswerTranscript || (answer.voiceAnswerUrl ? answer.textAnswer || null : null),
         isVoice: !!answer.voiceAnswerUrl,
         submittedAt: answer.submittedAt,
       };

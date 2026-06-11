@@ -81,7 +81,10 @@ class TranscriptionService {
 
       if (transcription) {
         await Answer.findByIdAndUpdate(answerId, {
+          // textAnswer feeds the analysis pipeline; voiceAnswerTranscript is what
+          // the history API/iOS app reads for voice answers. Keep both in sync.
           textAnswer: transcription,
+          voiceAnswerTranscript: transcription,
           transcriptionPending: false,
         });
 
@@ -100,6 +103,7 @@ class TranscriptionService {
       } else {
         await Answer.findByIdAndUpdate(answerId, {
           textAnswer: '[Voice answer — transcription failed]',
+          voiceAnswerTranscript: '[Voice answer — transcription failed]',
           transcriptionPending: false,
         });
         logger.warn(`Empty transcription for answer ${answerId}`);
