@@ -130,7 +130,7 @@ const userSchema = new mongoose.Schema(
     profileStage: {
       type: String,
       enum: {
-        values: ['incomplete', 'voice_pending', 'questions_pending', 'ready'],
+        values: ['incomplete', 'voice_pending', 'questions_pending', 'preview', 'ready'],
         message: '{VALUE} is not a valid profile stage',
       },
       default: 'incomplete',

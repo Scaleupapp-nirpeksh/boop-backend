@@ -115,6 +115,12 @@ const questionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Flag for onboarding questions shown before profile is complete
+    isOnboarding: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

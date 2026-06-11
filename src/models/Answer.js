@@ -67,6 +67,12 @@ const answerSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Transcript of the voice answer (populated after transcription)
+    voiceAnswerTranscript: {
+      type: String,
+      default: null,
+    },
+
     // How long the user spent on this question (seconds)
     timeSpent: {
       type: Number,
