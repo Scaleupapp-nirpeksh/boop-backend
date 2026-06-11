@@ -164,6 +164,15 @@ class DiscoverService {
       throw error;
     }
 
+    // Connect requires a completed profile (voice + photos → ready)
+    const requester = await User.findById(fromUserId).lean();
+    if (!requester || requester.profileStage !== 'ready') {
+      const error = new Error('Add your voice and photos to start connecting');
+      error.statusCode = 403;
+      error.code = 'complete_setup_required';
+      throw error;
+    }
+
     // Calculate compatibility
     const compatibility =
       await CompatibilityService.calculateCompatibility(fromUserId, toUserId);

@@ -81,6 +81,10 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     statusCode,
     message,
+    // Surface custom machine-readable error codes (e.g. 'complete_setup_required')
+    // so clients can branch without string-matching the message. Skip Mongoose's
+    // numeric duplicate-key code (11000), which is internal and not client-facing.
+    ...(typeof err.code === 'string' && { code: err.code }),
   };
 
   if (errors) {

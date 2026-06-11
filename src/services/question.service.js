@@ -5,6 +5,12 @@ const { DIMENSIONS } = require('../utils/constants');
 const logger = require('../utils/logger');
 const cache = require('../utils/cache');
 
+// Pure: answers → match confidence 0..100. Front-loads early gains, asymptotes.
+function matchConfidence(totalAnswered) {
+  const a = Math.max(0, totalAnswered);
+  return Math.min(100, Math.round(100 * (1 - Math.exp(-a / 14))));
+}
+
 class QuestionService {
   // ─── Get Available Questions ──────────────────────────────────────────
 
@@ -272,8 +278,10 @@ class QuestionService {
       totalQuestions: 60,
       daysSinceRegistration,
       profileStage: user.profileStage,
-      readyThreshold: 15,
-      isReady: totalAnswered >= 15,
+      matchConfidence: matchConfidence(totalAnswered),
+      onboardingComplete: totalAnswered >= 8,
+      readyThreshold: 8,
+      isReady: totalAnswered >= 8,
       dimensions: dimensionProgress,
     };
   }
@@ -315,6 +323,9 @@ class QuestionService {
         selectedOption: answer.selectedOption,
         selectedOptions: answer.selectedOptions,
         followUpAnswer: answer.followUpAnswer,
+        voiceAnswerUrl: answer.voiceAnswerUrl || null,
+        voiceAnswerTranscript: answer.voiceAnswerTranscript || null,
+        isVoice: !!answer.voiceAnswerUrl,
         submittedAt: answer.submittedAt,
       };
     });
@@ -436,3 +447,5 @@ class QuestionService {
 }
 
 module.exports = QuestionService;
+// Exported separately so it's unit-testable and callable internally.
+module.exports.matchConfidence = matchConfidence;

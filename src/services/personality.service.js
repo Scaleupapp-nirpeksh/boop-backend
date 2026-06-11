@@ -5,7 +5,7 @@ const User = require('../models/User');
 const logger = require('../utils/logger');
 
 // Analysis milestones — personality is recalculated at each of these
-const MILESTONES = [6, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+const MILESTONES = [8, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
 
 // Facet keys for the analysis
 const FACET_KEYS = [
