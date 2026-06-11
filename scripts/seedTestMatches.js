@@ -10,7 +10,7 @@
  *     answers (high embedding cosine similarity, no verbatim copies).
  *   - Ishita → GOLD (75–84): answers Q1–20 mostly aligned — 3 single choices
  *     diverge, 3 text answers swapped for divergent canned content.
- *   - Meher  → SILVER (65–74): answers Q1–15 partly aligned — 3 of 8 single
+ *   - Meher  → SILVER (65–74): answers Q1–15 partly aligned — 4 of 8 single
  *     choices diverge, 5 of 7 texts are contrasting canned content.
  *
  * Demo state per user (mirrors the live match pipeline):
@@ -145,9 +145,9 @@ const PERSONAS = [
     phone: '+919900011103',
     ageDelta: 4,
     answerCount: 15,
-    // 3 of 8 single choices diverge; q10/q12 texts paraphrased, rest canned
-    divergeSingles: new Set([5, 11, 13]),
-    divergePrefs: { 5: 1, 11: 0, 13: 2 },
+    // 4 of 8 single choices diverge; q10/q12 texts paraphrased, rest canned
+    divergeSingles: new Set([5, 7, 11, 13]),
+    divergePrefs: { 5: 1, 7: 2, 11: 0, 13: 2 },
     cannedTexts: {
       1: 'Nobody — I just post it on my story and let everyone find out at once! Watching the reactions roll in is half the fun honestly.',
       4: "I barely notice, my phone is always blowing up anyway. If it's important they'll call. I'm not the type to sit around watching the chat.",
