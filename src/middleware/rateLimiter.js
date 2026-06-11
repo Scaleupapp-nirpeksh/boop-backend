@@ -22,14 +22,16 @@ const globalLimiter = rateLimit({
 });
 
 /**
- * Stricter limiter for auth routes: 20 requests per 15 minute window per IP.
- * The real anti-abuse control for OTP is the per-phone throttle + attempt
- * lockout in auth.service.js; this is a coarse per-IP DoS guard kept lenient
- * enough for shared mobile (CGNAT) IPs.
+ * Coarse per-IP DoS guard for auth routes: 120 requests per 15 minute window.
+ * This is shared across send-otp AND verify-otp, so a single user mistyping a
+ * code can burn several; combined with Indian CGNAT (many real users behind one
+ * carrier IP), a low cap blocks legitimate sign-ins. The REAL per-number anti-
+ * abuse is the 60s per-phone OTP cooldown + 10-min expiry in auth.service.js,
+ * which caps SMS spend per number regardless of this IP ceiling.
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
