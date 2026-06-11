@@ -35,6 +35,7 @@ const questions = [
   {
     questionNumber: 2,
     dimension: 'emotional_vulnerability',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'How do you usually process a bad day?',
     questionType: 'single_choice',
@@ -54,6 +55,7 @@ const questions = [
   {
     questionNumber: 3,
     dimension: 'attachment_patterns',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'In your closest friendships, would you say you reach out first or wait to be reached out to?',
     questionType: 'single_choice',
@@ -85,6 +87,7 @@ const questions = [
   {
     questionNumber: 5,
     dimension: 'life_vision',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'Where do you see yourself living in 5 years?',
     questionType: 'single_choice',
@@ -116,6 +119,7 @@ const questions = [
   {
     questionNumber: 7,
     dimension: 'conflict_resolution',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'When you disagree with a friend, what\'s your first instinct?',
     questionType: 'single_choice',
@@ -147,6 +151,7 @@ const questions = [
   {
     questionNumber: 9,
     dimension: 'love_expression',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'How do you most naturally show someone you care?',
     questionType: 'single_choice',
@@ -179,6 +184,7 @@ const questions = [
   {
     questionNumber: 11,
     dimension: 'intimacy_comfort',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'How comfortable are you sharing personal stories with someone new?',
     questionType: 'single_choice',
@@ -210,6 +216,7 @@ const questions = [
   {
     questionNumber: 13,
     dimension: 'lifestyle_rhythm',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'Are you more of a planner or a go-with-the-flow person?',
     questionType: 'single_choice',
@@ -229,6 +236,7 @@ const questions = [
   {
     questionNumber: 14,
     dimension: 'growth_mindset',
+    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'What\'s the most recent thing you taught yourself?',
     questionType: 'text',
@@ -913,6 +921,15 @@ async function seed() {
       .sort(([, a], [, b]) => b - a)
       .forEach(([dim, count]) => {
         console.log(`   ${dim}: ${count} questions`);
+      });
+
+    // Summary of onboarding questions (shown before profile is complete)
+    const onboarding = questions.filter((q) => q.isOnboarding);
+    console.log(`\n🚀 Onboarding set: [${onboarding.map((q) => q.questionNumber).join(', ')}]`);
+    onboarding
+      .sort((a, b) => a.questionNumber - b.questionNumber)
+      .forEach((q) => {
+        console.log(`   #${q.questionNumber} — ${q.dimension}`);
       });
 
     console.log('\n🎉 Seed complete!');

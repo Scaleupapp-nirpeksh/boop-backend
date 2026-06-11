@@ -586,21 +586,23 @@ class ProfileService {
    * @param {User} user - Mongoose user document (mutated in place)
    */
   static async _checkAndAdvanceStage(user) {
+    const hasBasicInfo = !!(user.firstName && user.dateOfBirth && user.gender && user.interestedIn);
     const hasVoice = !!user.voiceIntro?.audioUrl;
     const photoCount = user.photos?.items?.length || 0;
     const hasMinPhotos = photoCount >= 3;
-    const answeredCount = user.questionsAnswered || 0;
+    const answered = user.questionsAnswered || 0;
 
-    // voice_pending → questions_pending (voice recorded + 3+ photos)
-    if (user.profileStage === 'voice_pending' && hasVoice && hasMinPhotos) {
-      user.profileStage = 'questions_pending';
-      logger.info(`User ${user._id} stage: voice_pending → questions_pending`);
+    if (user.profileStage === 'incomplete' && hasBasicInfo && answered >= 8) {
+      user.profileStage = 'preview';
+      logger.info(`User ${user._id} stage: incomplete → preview (${answered} answers)`);
     }
-
-    // questions_pending → ready (15+ questions answered)
-    if (user.profileStage === 'questions_pending' && answeredCount >= 15) {
+    if (user.profileStage === 'preview' && hasVoice && hasMinPhotos) {
       user.profileStage = 'ready';
-      logger.info(`User ${user._id} stage: questions_pending → ready`);
+      logger.info(`User ${user._id} stage: preview → ready`);
+    }
+    // Legacy safety: voice+photos+8 answers ⇒ ready from any mid stage
+    if (['voice_pending', 'questions_pending'].includes(user.profileStage) && hasVoice && hasMinPhotos && answered >= 8) {
+      user.profileStage = 'ready';
     }
   }
 

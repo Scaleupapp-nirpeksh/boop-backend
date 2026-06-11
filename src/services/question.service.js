@@ -120,10 +120,18 @@ class QuestionService {
     // 6. Increment user's question count and check stage
     user.questionsAnswered = (user.questionsAnswered || 0) + 1;
 
-    // Stage advancement: questions_pending → ready at 15+ answers
-    if (user.profileStage === 'questions_pending' && user.questionsAnswered >= 15) {
+    // Stage advancement (reward-first): incomplete → preview at 8 answers,
+    // then preview → ready once voice + 3 photos are present.
+    const hasBasicInfo = !!(user.firstName && user.dateOfBirth && user.gender && user.interestedIn);
+    if (user.profileStage === 'incomplete' && hasBasicInfo && user.questionsAnswered >= 8) {
+      user.profileStage = 'preview';
+      logger.info(`User ${userId} stage: incomplete → preview (${user.questionsAnswered} answers)`);
+    }
+    const hasVoice = !!user.voiceIntro?.audioUrl;
+    const photoCount = user.photos?.items?.length || 0;
+    if (user.profileStage === 'preview' && hasVoice && photoCount >= 3) {
       user.profileStage = 'ready';
-      logger.info(`User ${userId} stage: questions_pending → ready (${user.questionsAnswered} answers)`);
+      logger.info(`User ${userId} stage: preview → ready (${user.questionsAnswered} answers)`);
     }
 
     await user.save();
