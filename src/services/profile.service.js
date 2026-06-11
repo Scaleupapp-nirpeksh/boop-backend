@@ -40,7 +40,8 @@ class ProfileService {
 
   /**
    * Update basic profile fields (name, DOB, gender, interests, bio, location).
-   * Validates user is 18+ and advances profile stage to 'voice_pending'.
+   * Validates user is 18+. Stage stays 'incomplete' until 8 questions are
+   * answered (then _checkAndAdvanceStage moves them to 'preview').
    *
    * @param {string} userId
    * @param {object} data - { firstName, dateOfBirth, gender, interestedIn, bio?, location? }
@@ -104,11 +105,10 @@ class ProfileService {
       }
     });
 
-    // Advance stage: incomplete → voice_pending
-    if (user.profileStage === 'incomplete') {
-      user.profileStage = 'voice_pending';
-      logger.info(`User ${userId} stage: incomplete → voice_pending`);
-    }
+    // Reward-first flow: after basic info the user answers questions (not voice),
+    // so stay `incomplete` here. _checkAndAdvanceStage handles incomplete → preview
+    // once they reach 8 answers (e.g. when re-editing basic info after answering).
+    await ProfileService._checkAndAdvanceStage(user);
 
     await user.save();
     return user;
@@ -268,7 +268,7 @@ class ProfileService {
 
   /**
    * Delete a photo by its index in the gallery.
-   * Enforces minimum of 3 photos if profile stage is beyond voice_pending.
+   * Enforces a minimum of 3 photos once the user is `ready`.
    *
    * @param {string} userId
    * @param {number} photoIndex - Index of photo in items array
@@ -289,8 +289,9 @@ class ProfileService {
       throw error;
     }
 
-    // Enforce minimum if profile is past voice_pending
-    if (['questions_pending', 'ready'].includes(user.profileStage) && items.length <= 3) {
+    // Enforce min-3 only once the user is `ready` (they've completed photo setup).
+    // `preview` users have 0 photos and add them at connect-setup, so don't block them.
+    if (user.profileStage === 'ready' && items.length <= 3) {
       const error = new Error('You must have at least 3 photos');
       error.statusCode = 400;
       throw error;

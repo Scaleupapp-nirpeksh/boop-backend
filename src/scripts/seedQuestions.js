@@ -236,7 +236,6 @@ const questions = [
   {
     questionNumber: 14,
     dimension: 'growth_mindset',
-    isOnboarding: true,
     depthLevel: 'surface',
     questionText: 'What\'s the most recent thing you taught yourself?',
     questionType: 'text',
@@ -249,6 +248,7 @@ const questions = [
   {
     questionNumber: 15,
     dimension: 'growth_mindset',
+    isOnboarding: true,
     depthLevel: 'moderate',
     questionText: 'When you fail at something, how long does it take you to try again?',
     questionType: 'single_choice',
@@ -923,13 +923,15 @@ async function seed() {
         console.log(`   ${dim}: ${count} questions`);
       });
 
-    // Summary of onboarding questions (shown before profile is complete)
+    // Summary of onboarding questions (shown before profile is complete).
+    // All onboarding questions should be single_choice (tap-only, lowest friction).
     const onboarding = questions.filter((q) => q.isOnboarding);
-    console.log(`\n🚀 Onboarding set: [${onboarding.map((q) => q.questionNumber).join(', ')}]`);
+    const tapOnly = onboarding.every((q) => q.questionType === 'single_choice');
+    console.log(`\n🚀 Onboarding set (${onboarding.length}, ${tapOnly ? 'tap-only ✅' : 'MIXED — has typing ⚠️'}): [${onboarding.map((q) => q.questionNumber).join(', ')}]`);
     onboarding
       .sort((a, b) => a.questionNumber - b.questionNumber)
       .forEach((q) => {
-        console.log(`   #${q.questionNumber} — ${q.dimension}`);
+        console.log(`   #${q.questionNumber} — ${q.dimension} (${q.questionType})`);
       });
 
     console.log('\n🎉 Seed complete!');

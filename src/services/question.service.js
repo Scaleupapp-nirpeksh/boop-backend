@@ -133,6 +133,10 @@ class QuestionService {
       user.profileStage = 'ready';
       logger.info(`User ${userId} stage: preview → ready (${user.questionsAnswered} answers)`);
     }
+    // Legacy safety: a user on a legacy stage who completes everything ⇒ ready
+    if (['voice_pending', 'questions_pending'].includes(user.profileStage) && hasVoice && photoCount >= 3 && user.questionsAnswered >= 8) {
+      user.profileStage = 'ready';
+    }
 
     await user.save();
 
