@@ -93,25 +93,27 @@ const uploadVoiceIntro = multer({
 }).single('voiceIntro');
 
 /**
- * Gallery photos upload — up to 6 images, max 5MB each
+ * Gallery photos upload — up to 6 images, max 12MB each.
+ * 12MB (not 5) because modern iPhone photos (Portrait, large JPEG/HEIC exports)
+ * routinely exceed 5MB; sharp downsizes them server-side anyway.
  */
 const uploadGalleryPhotos = multer({
   storage,
   fileFilter: imageFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB per file
+    fileSize: 12 * 1024 * 1024, // 12MB per file
     files: 6,
   },
 }).array('photos', 6);
 
 /**
- * Single photo upload — 1 image, max 5MB
+ * Single photo upload — 1 image, max 12MB (see gallery note).
  */
 const uploadSinglePhoto = multer({
   storage,
   fileFilter: imageFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 12 * 1024 * 1024, // 12MB
     files: 1,
   },
 }).single('photo');
