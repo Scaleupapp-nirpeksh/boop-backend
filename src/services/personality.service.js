@@ -3,6 +3,8 @@ const Answer = require('../models/Answer');
 const Question = require('../models/Question');
 const User = require('../models/User');
 const logger = require('../utils/logger');
+const cache = require('../utils/cache');
+const { ARCHETYPES, findByCode } = require('../utils/archetypes');
 
 // Analysis milestones — personality is recalculated at each of these
 const MILESTONES = [8, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
@@ -101,7 +103,15 @@ class PersonalityService {
       // Update analysis with results
       analysis.facets = result.facets || [];
       analysis.summary = result.summary || '';
-      analysis.personalityType = result.personalityType || 'Unique Individual';
+
+      // Classify into a fixed archetype. Trust the AI's pick if it returned a
+      // valid catalog code; otherwise fall back deterministically. Never throw.
+      const archetype = this._resolveArchetype(result);
+      analysis.archetypeCode = archetype.code;
+      analysis.archetypeNumber = archetype.number;
+      // Backward-compat: personalityType mirrors the archetype name.
+      analysis.personalityType = archetype.name;
+
       analysis.numerology = {
         lifePathNumber: numerology.lifePathNumber,
         expressionNumber: numerology.expressionNumber,
@@ -113,7 +123,9 @@ class PersonalityService {
       analysis.status = 'completed';
       await analysis.save();
 
-      logger.info(`Personality analysis completed for user=${userId}, type="${analysis.personalityType}"`);
+      logger.info(
+        `Personality analysis completed for user=${userId}, archetype=${analysis.archetypeCode} "${analysis.personalityType}"`
+      );
       return analysis;
     } catch (err) {
       analysis.status = 'failed';
@@ -122,6 +134,48 @@ class PersonalityService {
       logger.error(`Personality analysis failed for user=${userId}:`, err.message);
       throw err;
     }
+  }
+
+  // ─── Archetype Classification ─────────────────────────────────────────
+
+  /**
+   * Resolve an AI analysis result to a fixed catalog archetype.
+   *
+   * Trusts `result.archetypeCode` when it is a valid catalog code. Otherwise
+   * falls back deterministically:
+   *   1. Index by the top-scoring facet's `key` — its char-sum modulo the
+   *      catalog length picks a stable archetype (same input → same output).
+   *   2. If no usable facets, default to ARCH_01.
+   * Never throws on a bad/missing code.
+   *
+   * @param {object} result - parsed OpenAI JSON
+   * @returns {{code, number, name, essence, signature}} a catalog archetype
+   * @private
+   */
+  static _resolveArchetype(result) {
+    const valid = findByCode(result?.archetypeCode);
+    if (valid) return valid;
+
+    if (result?.archetypeCode) {
+      logger.warn(`AI returned unknown archetypeCode="${result.archetypeCode}", using deterministic fallback`);
+    }
+
+    // Deterministic fallback keyed off the top-scoring facet.
+    const facets = Array.isArray(result?.facets) ? result.facets : [];
+    const topFacet = facets.reduce(
+      (best, f) => (f && typeof f.score === 'number' && f.score > (best?.score ?? -1) ? f : best),
+      null
+    );
+
+    if (topFacet?.key) {
+      const hash = String(topFacet.key)
+        .split('')
+        .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+      const index = hash % ARCHETYPES.length;
+      return ARCHETYPES[index];
+    }
+
+    return findByCode('ARCH_01');
   }
 
   // ─── Get Latest Analysis ──────────────────────────────────────────────
@@ -147,6 +201,17 @@ class PersonalityService {
       .sort({ triggeredAtCount: -1 })
       .lean();
 
+    // Enrich with the fixed archetype (name/essence resolved from the catalog)
+    // plus how rare this archetype is across all completed analyses.
+    if (analysis && analysis.archetypeCode) {
+      const archetype = findByCode(analysis.archetypeCode);
+      if (archetype) {
+        analysis.archetypeName = archetype.name;
+        analysis.essence = archetype.essence;
+        analysis.rarityPercent = await this.getArchetypeRarity(archetype.code);
+      }
+    }
+
     const answered = user.questionsAnswered || 0;
 
     // Find next milestone
@@ -160,6 +225,41 @@ class PersonalityService {
       isPreliminary: analysis ? analysis.isPreliminary : true,
       totalAnswered: answered,
     };
+  }
+
+  // ─── Archetype Rarity ─────────────────────────────────────────────────
+
+  /**
+   * How rare a given archetype is, as an integer percent of all completed
+   * analyses that share it: round(100 * countWithCode / max(1, totalCompleted)).
+   *
+   * The full distribution (count per archetypeCode across completed docs) is
+   * computed once and cached for 10 minutes, since it shifts slowly.
+   *
+   * @param {string} code - e.g. 'ARCH_01'
+   * @returns {number} integer percent (0..100)
+   */
+  static async getArchetypeRarity(code) {
+    if (!code) return 0;
+
+    const distribution = await cache.getOrSet('archetype:distribution', 600, async () => {
+      const rows = await PersonalityAnalysis.aggregate([
+        { $match: { status: 'completed', archetypeCode: { $ne: null } } },
+        { $group: { _id: '$archetypeCode', count: { $sum: 1 } } },
+      ]);
+
+      const counts = {};
+      let total = 0;
+      for (const row of rows) {
+        counts[row._id] = row.count;
+        total += row.count;
+      }
+      return { counts, total };
+    });
+
+    const countWithCode = distribution.counts?.[code] || 0;
+    const totalCompleted = distribution.total || 0;
+    return Math.round((100 * countWithCode) / Math.max(1, totalCompleted));
   }
 
   // ─── Numerology Calculation ───────────────────────────────────────────
@@ -259,6 +359,9 @@ class PersonalityService {
 
     const isPreliminary = milestone < 15;
 
+    // Fixed archetype catalog — GPT-4o must classify into EXACTLY ONE of these.
+    const archetypeLines = ARCHETYPES.map((a) => `- ${a.code} · ${a.name}: ${a.signature}`).join('\n');
+
     return `You are a personality psychologist and numerologist analyzing a dating app user's responses to build their personality profile.
 
 ## User Info
@@ -270,11 +373,16 @@ class PersonalityService {
 ## Their Answers (${answers.length} total)
 ${answerLines.join('\n')}
 
+## Personality Archetypes (choose EXACTLY ONE)
+Classify this person into the single archetype below whose signature best matches their answers and numerology. Return its code in "archetypeCode". You MUST pick one of these exact codes — do not invent a new type.
+${archetypeLines}
+
 ## Your Task
 Analyze this person's answers along with their numerological profile to create a personality report. ${isPreliminary ? 'Note: This is a preliminary analysis based on limited data. Be clear about confidence levels.' : 'This is a full analysis.'}
 
 Respond with ONLY valid JSON in this exact format:
 {
+  "archetypeCode": "<EXACTLY ONE code from the archetype list above, e.g. ARCH_01>",
   "personalityType": "The [Adjective] [Noun]",
   "summary": "A warm, insightful 2-3 sentence summary of who this person is in relationships. Make it feel personal and mirror-like — they should feel seen. Reference specific patterns from their answers without quoting them directly.",
   "facets": [
@@ -335,6 +443,7 @@ Respond with ONLY valid JSON in this exact format:
 }
 
 IMPORTANT:
+- "archetypeCode" MUST be exactly one of the catalog codes listed above (e.g. ARCH_01) — never invent a new code or type
 - Scores represent how strongly this facet defines them (not good/bad)
 - Keep descriptions warm, specific, and insightful — avoid clinical language
 - The personalityType should be memorable and positive (e.g., "The Gentle Adventurer", "The Thoughtful Flame")

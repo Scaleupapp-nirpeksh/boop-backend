@@ -50,6 +50,10 @@ const personalityAnalysisSchema = new mongoose.Schema(
     summary: { type: String },
     personalityType: { type: String },
 
+    // Fixed archetype classification (name/essence resolve from the catalog at read time)
+    archetypeCode: { type: String, default: null },
+    archetypeNumber: { type: Number, default: null },
+
     // Numerology
     numerology: numerologySchema,
 
