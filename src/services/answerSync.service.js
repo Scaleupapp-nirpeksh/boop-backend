@@ -60,6 +60,68 @@ class AnswerSyncService {
       questions: perQuestion,
     };
   }
+
+  /**
+   * Verdict phrase from the bucket distribution.
+   */
+  static verdict(buckets) {
+    const c = Object.fromEntries(buckets.map((b) => [b.key, b.count]));
+    const total = buckets.reduce((s, b) => s + b.count, 0) || 1;
+    const aligned = ((c.highly_in_sync || 0) + (c.in_sync || 0)) / total;
+    if (aligned >= 0.7) return 'Mostly in sync';
+    if (aligned >= 0.4) return 'Partly in sync';
+    return 'You see things differently';
+  }
+
+  /**
+   * Produce a 1-line neutral summary of EACH person's answer per question.
+   * Privacy: returns only synthesized summaries — never the raw answer text.
+   * Batched single LLM call; rule-based fallback when llm is disabled/fails.
+   */
+  static async summarize(perQuestion, questionDocs, mapA, mapB, opts = {}) {
+    const qMap = new Map(questionDocs.map((q) => [q.questionNumber, q]));
+    const useLLM = opts.llm !== false && process.env.OPENAI_API_KEY;
+
+    const fallback = () => perQuestion.map((p) => {
+      const sameSide = p.syncLevel === 'highly_in_sync' || p.syncLevel === 'in_sync';
+      return {
+        ...p,
+        category: qMap.get(p.questionNumber)?.dimension || 'general',
+        summaryYou: sameSide ? 'You lean the same way here.' : 'You take your own angle on this.',
+        summaryThem: sameSide ? 'They land in the same place.' : 'They see it a little differently.',
+      };
+    });
+
+    if (!useLLM) return fallback();
+
+    try {
+      const OpenAI = require('openai');
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const items = perQuestion.map((p) => {
+        const a = mapA.get(p.questionNumber) || {};
+        const b = mapB.get(p.questionNumber) || {};
+        const txt = (x) => x.textAnswer || x.selectedOption || (x.selectedOptions || []).join(', ') || '';
+        return { n: p.questionNumber, q: qMap.get(p.questionNumber)?.questionText || '', you: txt(a), them: txt(b) };
+      });
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini', temperature: 0.5, response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You summarize how two people answered the same question. For each item return a SHORT (max 90 chars) neutral, warm one-liner for "you" and for "them" — paraphrase the gist, NEVER quote them verbatim. Return JSON: { "items": [{ "n": number, "summaryYou": string, "summaryThem": string }] }' },
+          { role: 'user', content: JSON.stringify({ items }) },
+        ],
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content);
+      const byN = new Map((parsed.items || []).map((i) => [i.n, i]));
+      return perQuestion.map((p) => ({
+        ...p,
+        category: qMap.get(p.questionNumber)?.dimension || 'general',
+        summaryYou: byN.get(p.questionNumber)?.summaryYou || 'You shared your take.',
+        summaryThem: byN.get(p.questionNumber)?.summaryThem || 'They shared theirs.',
+      }));
+    } catch (err) {
+      return fallback();
+    }
+  }
 }
 
 module.exports = AnswerSyncService;

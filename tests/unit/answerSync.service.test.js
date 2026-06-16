@@ -34,3 +34,26 @@ describe('AnswerSyncService.computeBuckets', () => {
     expect(counts.poles_apart).toBe(1);
   });
 });
+
+describe('AnswerSyncService.summarize', () => {
+  it('uses the rule-based fallback when no LLM and never returns raw answers', async () => {
+    const per = [{ questionNumber: 1, dimension: 'love_expression', similarity: 1, syncLevel: 'highly_in_sync' }];
+    const qDocs = [{ questionNumber: 1, questionText: 'How do you show love?', dimension: 'love_expression' }];
+    const ansA = new Map([[1, { questionNumber: 1, textAnswer: 'SECRET-A' }]]);
+    const ansB = new Map([[1, { questionNumber: 1, textAnswer: 'SECRET-B' }]]);
+    const out = await AnswerSyncService.summarize(per, qDocs, ansA, ansB, { llm: false });
+    expect(out[0]).toHaveProperty('summaryYou');
+    expect(out[0]).toHaveProperty('summaryThem');
+    expect(JSON.stringify(out)).not.toContain('SECRET-A');
+    expect(JSON.stringify(out)).not.toContain('SECRET-B');
+  });
+});
+
+describe('AnswerSyncService.verdict', () => {
+  it('summarizes the distribution into a phrase', () => {
+    expect(AnswerSyncService.verdict([
+      { key: 'highly_in_sync', count: 6 }, { key: 'in_sync', count: 4 },
+      { key: 'neutral_ground', count: 2 }, { key: 'different_views', count: 2 }, { key: 'poles_apart', count: 1 },
+    ])).toMatch(/sync/i);
+  });
+});
