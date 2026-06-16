@@ -94,6 +94,13 @@ if (NODE_ENV === 'development') {
 app.use(globalLimiter);
 
 // ============================================================
+// Public legal pages (privacy / terms / support)
+// ============================================================
+
+// Stable top-level URLs (e.g. https://api.unmutee.in/legal/privacy)
+app.use('/legal', require('./routes/legal.routes'));
+
+// ============================================================
 // API Routes
 // ============================================================
 
