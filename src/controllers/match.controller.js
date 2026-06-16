@@ -328,8 +328,14 @@ const getRelationshipInsights = asyncHandler(async (req, res) => {
 
   const activeDays = new Set(messages.map(m => new Date(m.createdAt).toISOString().split('T')[0])).size;
 
-  // Dimension scores
-  const dimensionScores = match.dimensionScores ? Object.fromEntries(match.dimensionScores) : {};
+  // Dimension scores — `.lean()` yields a plain (non-iterable) object, so guard
+  // Object.fromEntries against it to avoid "object is not iterable".
+  const dimensionScores =
+    match.dimensionScores instanceof Map
+      ? Object.fromEntries(match.dimensionScores)
+      : (match.dimensionScores && typeof match.dimensionScores === 'object'
+          ? { ...match.dimensionScores }
+          : {});
 
   // Build the prompt for OpenAI
   const analysisData = {
@@ -531,8 +537,13 @@ const getConversationStarters = async (req, res, next) => {
       // Numerology is optional — continue without it
     }
 
-    // Build dimension score context for richer prompts
-    const dimensionScores = match.dimensionScores ? Object.fromEntries(match.dimensionScores) : {};
+    // Build dimension score context for richer prompts ( `.lean()` → plain object )
+    const dimensionScores =
+      match.dimensionScores instanceof Map
+        ? Object.fromEntries(match.dimensionScores)
+        : (match.dimensionScores && typeof match.dimensionScores === 'object'
+            ? { ...match.dimensionScores }
+            : {});
     const dimensionContext = Object.entries(dimensionScores)
       .map(([dim, score]) => `${dim.replace(/_/g, ' ')}: ${Math.round(score * 100)}%`)
       .join(', ');
@@ -628,6 +639,18 @@ const sendBoop = asyncHandler(async (req, res) => {
       senderId: req.user._id.toString(),
       senderName: result.senderName,
       boopCount: result.boopCount,
+    });
+  } catch (_) {
+    // Non-critical
+  }
+
+  // Push the other user a "boop received" notification (best-effort).
+  try {
+    const NotificationService = require('../services/notification.service');
+    NotificationService.sendPush(result.otherUserId, {
+      title: `${result.senderName || 'Someone'} booped you 💕`,
+      body: 'Tap to boop them back.',
+      data: { type: 'boop', matchId: result.matchId.toString() },
     });
   } catch (_) {
     // Non-critical

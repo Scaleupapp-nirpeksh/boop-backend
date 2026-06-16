@@ -41,8 +41,14 @@ class QuestionService {
         ? { $or: [{ season: null }, { season: activeSeason }] }
         : { season: null };
 
+      // Drip-release is OFF by default: users can always answer any remaining
+      // question. Previously only the 15 day-1 questions were served, so anyone
+      // who finished them saw "all caught up" despite 45 unanswered questions.
+      // Set QUESTIONS_DRIP=true to restore the day-by-day unlock schedule.
+      const dripEnabled = process.env.QUESTIONS_DRIP === 'true';
+
       const questions = await Question.find({
-        dayAvailable: { $lte: daysSinceRegistration },
+        ...(dripEnabled ? { dayAvailable: { $lte: daysSinceRegistration } } : {}),
         questionNumber: { $nin: Array.from(answeredNumbers) },
         isActive: { $ne: false },
         ...seasonFilter,
@@ -97,11 +103,14 @@ class QuestionService {
       throw error;
     }
 
-    const daysSinceRegistration = this._calculateDaysSinceRegistration(user.createdAt);
-    if (question.dayAvailable > daysSinceRegistration) {
-      const error = new Error(`Question ${questionNumber} is not yet available. Come back on day ${question.dayAvailable}!`);
-      error.statusCode = 403;
-      throw error;
+    // Day-gate only enforced when the drip schedule is explicitly enabled.
+    if (process.env.QUESTIONS_DRIP === 'true') {
+      const daysSinceRegistration = this._calculateDaysSinceRegistration(user.createdAt);
+      if (question.dayAvailable > daysSinceRegistration) {
+        const error = new Error(`Question ${questionNumber} is not yet available. Come back on day ${question.dayAvailable}!`);
+        error.statusCode = 403;
+        throw error;
+      }
     }
 
     // 4. Validate answer matches question type

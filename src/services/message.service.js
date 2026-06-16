@@ -331,10 +331,11 @@ class MessageService {
 
             for (const uid of [senderId, otherUserId]) {
               NotificationService.sendPush(uid, {
-                type: 'streak_milestone',
                 title: `🔥 ${match.streak.current}-day streak!`,
                 body: `You and ${uid.toString() === senderId.toString() ? 'your match' : senderName} have chatted ${match.streak.current} days in a row!`,
-                data: { matchId: conversation.matchId.toString() },
+                // sendPush derives the notification type from data.type, so it
+                // must live inside data (was top-level → silently dropped).
+                data: { type: 'streak_milestone', matchId: conversation.matchId.toString() },
               });
             }
           }

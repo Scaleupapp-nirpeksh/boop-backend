@@ -660,9 +660,15 @@ class MatchService {
       (u) => u._id.toString() === userId.toString()
     );
 
-    const dimensionScores = match.dimensionScores
-      ? Object.fromEntries(match.dimensionScores)
-      : {};
+    // `.lean()` returns dimensionScores as a plain object, not a Map — and a
+    // plain object isn't iterable, so Object.fromEntries() would throw
+    // "object is not iterable". Handle Map (hydrated), object (lean), or missing.
+    const dimensionScores =
+      match.dimensionScores instanceof Map
+        ? Object.fromEntries(match.dimensionScores)
+        : (match.dimensionScores && typeof match.dimensionScores === 'object'
+            ? { ...match.dimensionScores }
+            : {});
 
     const DIMENSION_META = {
       emotional_vulnerability: { label: 'Emotional Honesty', icon: 'heart.fill', color: 'FF6B6B' },

@@ -167,6 +167,13 @@ const gameSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // Comfort snapshot captured when this game completed, so the post-game
+    // reveal can celebrate how much the game moved the connection forward
+    // (and, in turn, lifted the photo fog). null until the game completes.
+    comfortBefore: { type: Number, default: null },
+    comfortAfter: { type: Number, default: null },
+    comfortDelta: { type: Number, default: null },
   },
   {
     timestamps: true,

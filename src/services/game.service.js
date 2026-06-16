@@ -328,10 +328,16 @@ class GameService {
       } catch {
         // Non-critical
       }
+
+      // Recompute comfort now that this game counts as completed, and persist
+      // the delta on the game so the post-game reveal can show "Comfort +N".
+      await this._captureComfortDelta(game);
+      await game.save();
     }
 
     return {
       gameId: game._id,
+      comfort: this._comfortPayload(game),
       gameType: game.gameType,
       status: game.status,
       currentRound: game.currentRound,
@@ -578,6 +584,42 @@ class GameService {
     this.roundTimers.set(game._id.toString(), timer);
   }
 
+  /**
+   * After a game is saved as completed, recompute the match's comfort score and
+   * record before/after/delta on the game. Best-effort: never throws into the
+   * submit flow. The game must already be persisted as `completed` so the
+   * recompute counts it.
+   * @private
+   */
+  static async _captureComfortDelta(game) {
+    try {
+      if (!game.matchId) return;
+      const ComfortService = require('./comfort.service');
+      const before = await Match.findById(game.matchId).select('comfortScore').lean();
+      const previous = before?.comfortScore ?? 0;
+      const result = await ComfortService.calculateComfortScore(game.matchId);
+      const current = result?.score ?? previous;
+      game.comfortBefore = previous;
+      game.comfortAfter = current;
+      game.comfortDelta = Math.max(0, current - previous);
+    } catch (err) {
+      logger.error(`Comfort delta capture failed for game ${game._id}:`, err.message);
+    }
+  }
+
+  /**
+   * Shapes the persisted comfort snapshot for the client, or null if absent.
+   * @private
+   */
+  static _comfortPayload(game) {
+    if (game.comfortAfter == null) return null;
+    return {
+      before: game.comfortBefore ?? 0,
+      after: game.comfortAfter,
+      delta: game.comfortDelta ?? 0,
+    };
+  }
+
   static _clearTimers(gameId) {
     const key = gameId.toString();
     if (this.roundTimers.has(key)) {
@@ -602,6 +644,7 @@ class GameService {
       createdAt: game.createdAt,
       sessionPhase: this._sessionPhaseForGame(game),
       sync: this._formatSyncState(game, currentUserId),
+      comfort: GameService._comfortPayload(game),
     };
   }
 

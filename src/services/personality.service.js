@@ -31,17 +31,26 @@ class PersonalityService {
    * @param {number} questionsAnswered - current total answered count
    */
   static async checkAndTriggerAnalysis(userId, questionsAnswered) {
-    if (!MILESTONES.includes(questionsAnswered)) return;
+    // Level-triggered (catch-up), not exact-match. Previously this only fired on
+    // the single submission that landed exactly on a milestone, so anyone past
+    // the last milestone (60) — or whose milestone submission was missed/bulk
+    // imported — never (re)generated and was stranded with no/stale type.
+    const reached = MILESTONES.filter((m) => m <= questionsAnswered);
+    if (reached.length === 0) return; // below the first milestone
+    const targetMilestone = reached[reached.length - 1];
 
-    // Check if analysis already exists for this milestone
+    // Skip only if we already have a usable analysis at/beyond the target that
+    // carries a VALID archetype code. Older pre-archetype docs (archetypeCode
+    // null/missing) must regenerate — otherwise they render as "no type".
     const existing = await PersonalityAnalysis.findOne({
       userId,
-      triggeredAtCount: questionsAnswered,
+      triggeredAtCount: { $gte: targetMilestone },
       status: { $in: ['pending', 'completed'] },
+      archetypeCode: { $ne: null },
     });
 
     if (existing) {
-      logger.debug(`Personality analysis already exists for user=${userId} at milestone=${questionsAnswered}`);
+      logger.debug(`Personality analysis already current for user=${userId} (>= ${targetMilestone})`);
       return;
     }
 
@@ -50,8 +59,8 @@ class PersonalityService {
       const { getPersonalityQueue } = require('../config/queue');
       const queue = getPersonalityQueue();
       if (queue) {
-        await queue.add({ userId: userId.toString(), milestone: questionsAnswered });
-        logger.info(`Personality analysis queued for user=${userId} at milestone=${questionsAnswered}`);
+        await queue.add({ userId: userId.toString(), milestone: targetMilestone });
+        logger.info(`Personality analysis queued for user=${userId} at milestone=${targetMilestone}`);
         return;
       }
     } catch (err) {
@@ -59,7 +68,7 @@ class PersonalityService {
     }
 
     // Fallback: run inline (non-blocking)
-    this.generateAnalysis(userId, questionsAnswered).catch((err) => {
+    this.generateAnalysis(userId, targetMilestone).catch((err) => {
       logger.error(`Inline personality analysis failed for user=${userId}:`, err.message);
     });
   }

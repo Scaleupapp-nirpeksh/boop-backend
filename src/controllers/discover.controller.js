@@ -3,6 +3,25 @@ const DiscoverService = require('../services/discover.service');
 
 // MARK: - Discover Controller
 
+// Warm, generic openers used whenever the LLM is unavailable, errors, or returns
+// nothing — so the connect-note sheet always has something to offer.
+function fallbackSuggestions() {
+  return [
+    {
+      text: "Your answers really resonated with me — especially about what matters most in connection.",
+      reason: 'Generic but warm',
+    },
+    {
+      text: "I love how thoughtful your responses are. I think we'd have great conversations!",
+      reason: 'Compliment their depth',
+    },
+    {
+      text: "Something about your profile feels genuine. I'd love to get to know you better.",
+      reason: 'Authenticity focus',
+    },
+  ];
+}
+
 /**
  * @desc    Get discovery candidates for the current user
  * @route   GET /api/v1/discover
@@ -118,7 +137,7 @@ const getPendingLikes = asyncHandler(async (req, res) => {
 const suggestNote = async (req, res, next) => {
   try {
     const { targetUserId } = req.params;
-    const userId = req.user.id;
+    const userId = req.user._id;
 
     // Get both users' question answers
     const Answer = require('../models/Answer');
@@ -177,24 +196,30 @@ const suggestNote = async (req, res, next) => {
       });
 
       const result = JSON.parse(completion.choices[0].message.content);
-      return res.json({ suggestions: result.suggestions || [] });
+      const aiSuggestions = result.suggestions || [];
+      // Empty/garbage LLM result falls through to the warm generic openers.
+      if (aiSuggestions.length > 0) {
+        return res.status(200).json({
+          success: true,
+          statusCode: 200,
+          message: 'Suggestions generated',
+          data: { suggestions: aiSuggestions },
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        statusCode: 200,
+        message: 'Suggestions generated',
+        data: { suggestions: fallbackSuggestions() },
+      });
     } catch (aiError) {
-      // Fallback: generic suggestions
-      return res.json({
-        suggestions: [
-          {
-            text: "Your answers really resonated with me — especially about what matters most in connection.",
-            reason: 'Generic but warm',
-          },
-          {
-            text: "I love how thoughtful your responses are. I think we'd have great conversations!",
-            reason: 'Compliment their depth',
-          },
-          {
-            text: "Something about your profile feels genuine. I'd love to get to know you better.",
-            reason: 'Authenticity focus',
-          },
-        ],
+      // Fallback: generic but warm openers (wrapped in the standard envelope
+      // so the client actually receives them instead of an empty state).
+      return res.status(200).json({
+        success: true,
+        statusCode: 200,
+        message: 'Suggestions generated',
+        data: { suggestions: fallbackSuggestions() },
       });
     }
   } catch (error) {
