@@ -122,6 +122,32 @@ class AnswerSyncService {
       return fallback();
     }
   }
+
+  /**
+   * Full sync payload for two users, cached 10 min (per sorted pair).
+   * Privacy: never includes raw answers.
+   */
+  static async getSync(userIdA, userIdB) {
+    const cache = require('../utils/cache');
+    const key = `answersync:${[userIdA.toString(), userIdB.toString()].sort().join(':')}`;
+    return cache.getOrSet(key, 600, async () => {
+      const base = await this.computeBuckets(userIdA, userIdB);
+      if (base.totalCommon === 0) {
+        return { totalCommon: 0, verdict: 'Not enough shared answers yet', buckets: base.buckets, questions: [] };
+      }
+      const [ansA, ansB] = await Promise.all([
+        Answer.find({ userId: userIdA }).select('+embedding').lean(),
+        Answer.find({ userId: userIdB }).select('+embedding').lean(),
+      ]);
+      const mapA = new Map(ansA.map((a) => [a.questionNumber, a]));
+      const mapB = new Map(ansB.map((a) => [a.questionNumber, a]));
+      const qDocs = await Question.find({ questionNumber: { $in: base.questions.map((q) => q.questionNumber) } }).lean();
+      const questions = await this.summarize(base.questions, qDocs, mapA, mapB);
+      // Strip the raw similarity from the wire payload (keep syncLevel + summaries only).
+      const safe = questions.map(({ similarity, ...rest }) => rest);
+      return { totalCommon: base.totalCommon, verdict: this.verdict(base.buckets), buckets: base.buckets, questions: safe };
+    });
+  }
 }
 
 module.exports = AnswerSyncService;

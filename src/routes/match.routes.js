@@ -113,6 +113,13 @@ router.get(
   matchController.getCompatibilityDeepDive
 );
 
+// ─── Answer Sync (privacy-safe "how you answer together") ─────
+router.get(
+  '/:matchId/answer-sync',
+  validateParams(matchIdParamSchema),
+  matchController.getAnswerSync
+);
+
 // ─── Boop (Poke) ────────────────────────────────────────────
 router.post(
   '/:matchId/boop',

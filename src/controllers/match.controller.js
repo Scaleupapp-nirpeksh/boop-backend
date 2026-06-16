@@ -683,6 +683,45 @@ const getCompatibilityDeepDive = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Answer-sync analysis for a match (common questions bucketed by sync level)
+ * @route   GET /api/v1/matches/:matchId/answer-sync
+ * @access  Private (requires complete profile)
+ *
+ * Privacy: returns only synthesized one-line summaries — never a user's raw
+ * answer text/options.
+ */
+const getAnswerSync = asyncHandler(async (req, res) => {
+  const Match = require('../models/Match');
+  const AnswerSyncService = require('../services/answerSync.service');
+
+  const match = await Match.findById(req.params.matchId).lean();
+  if (!match) {
+    const error = new Error('Match not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Match participants live in `users: [ObjectId, ObjectId]` (sorted pair).
+  const me = req.user._id.toString();
+  const ids = (match.users || [match.userA, match.userB]).map((u) => u.toString());
+  const other = ids.find((id) => id !== me);
+  if (!other) {
+    const error = new Error('Match not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const result = await AnswerSyncService.getSync(me, other);
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Answer sync generated',
+    data: result,
+  });
+});
+
 module.exports = {
   getMatches,
   getMatchById,
@@ -696,5 +735,6 @@ module.exports = {
   getRelationshipInsights,
   getConversationStarters,
   getCompatibilityDeepDive,
+  getAnswerSync,
   sendBoop,
 };
