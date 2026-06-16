@@ -695,7 +695,12 @@ const getAnswerSync = asyncHandler(async (req, res) => {
   const Match = require('../models/Match');
   const AnswerSyncService = require('../services/answerSync.service');
 
-  const match = await Match.findById(req.params.matchId).lean();
+  // Enforce that the caller is one of the two match participants.
+  const match = await Match.findOne({
+    _id: req.params.matchId,
+    users: req.user._id,
+    isActive: true,
+  }).lean();
   if (!match) {
     const error = new Error('Match not found');
     error.statusCode = 404;
@@ -703,14 +708,10 @@ const getAnswerSync = asyncHandler(async (req, res) => {
   }
 
   // Match participants live in `users: [ObjectId, ObjectId]` (sorted pair).
+  // Membership is guaranteed by the query above, so the other id is simply the
+  // one that isn't the caller.
   const me = req.user._id.toString();
-  const ids = (match.users || [match.userA, match.userB]).map((u) => u.toString());
-  const other = ids.find((id) => id !== me);
-  if (!other) {
-    const error = new Error('Match not found');
-    error.statusCode = 404;
-    throw error;
-  }
+  const other = match.users.map((u) => u.toString()).find((id) => id !== me);
 
   const result = await AnswerSyncService.getSync(me, other);
 

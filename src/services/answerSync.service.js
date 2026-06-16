@@ -58,6 +58,11 @@ class AnswerSyncService {
       totalCommon: perQuestion.length,
       buckets: BUCKETS.map((b) => ({ key: b.key, label: b.label, count: counts[b.key] })),
       questions: perQuestion,
+      // Loaded data reused by getSync to avoid a second round-trip. Only the
+      // question docs for the common questions (those present in qMap) are kept.
+      mapA,
+      mapB,
+      questionDocs: common.map((qn) => qMap.get(qn)).filter(Boolean),
     };
   }
 
@@ -135,14 +140,9 @@ class AnswerSyncService {
       if (base.totalCommon === 0) {
         return { totalCommon: 0, verdict: 'Not enough shared answers yet', buckets: base.buckets, questions: [] };
       }
-      const [ansA, ansB] = await Promise.all([
-        Answer.find({ userId: userIdA }).select('+embedding').lean(),
-        Answer.find({ userId: userIdB }).select('+embedding').lean(),
-      ]);
-      const mapA = new Map(ansA.map((a) => [a.questionNumber, a]));
-      const mapB = new Map(ansB.map((a) => [a.questionNumber, a]));
-      const qDocs = await Question.find({ questionNumber: { $in: base.questions.map((q) => q.questionNumber) } }).lean();
-      const questions = await this.summarize(base.questions, qDocs, mapA, mapB);
+      // Reuse the answer maps + question docs already loaded by computeBuckets
+      // instead of re-querying both users' answers and the questions.
+      const questions = await this.summarize(base.questions, base.questionDocs, base.mapA, base.mapB);
       // Strip the raw similarity from the wire payload (keep syncLevel + summaries only).
       const safe = questions.map(({ similarity, ...rest }) => rest);
       return { totalCommon: base.totalCommon, verdict: this.verdict(base.buckets), buckets: base.buckets, questions: safe };
