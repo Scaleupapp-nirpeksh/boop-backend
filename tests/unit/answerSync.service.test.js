@@ -44,6 +44,8 @@ describe('AnswerSyncService.summarize', () => {
     const out = await AnswerSyncService.summarize(per, qDocs, ansA, ansB, { llm: false });
     expect(out[0]).toHaveProperty('summaryYou');
     expect(out[0]).toHaveProperty('summaryThem');
+    // questionText (the shared, non-private prompt) is passed through from the question docs.
+    expect(out[0].questionText).toBe('How do you show love?');
     expect(JSON.stringify(out)).not.toContain('SECRET-A');
     expect(JSON.stringify(out)).not.toContain('SECRET-B');
   });

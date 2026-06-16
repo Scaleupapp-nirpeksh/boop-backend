@@ -92,6 +92,8 @@ class AnswerSyncService {
       return {
         ...p,
         category: qMap.get(p.questionNumber)?.dimension || 'general',
+        // questionText is the shared question prompt (identical for everyone, not private).
+        questionText: qMap.get(p.questionNumber)?.questionText || '',
         summaryYou: sameSide ? 'You lean the same way here.' : 'You take your own angle on this.',
         summaryThem: sameSide ? 'They land in the same place.' : 'They see it a little differently.',
       };
@@ -120,6 +122,8 @@ class AnswerSyncService {
       return perQuestion.map((p) => ({
         ...p,
         category: qMap.get(p.questionNumber)?.dimension || 'general',
+        // questionText is the shared question prompt (identical for everyone, not private).
+        questionText: qMap.get(p.questionNumber)?.questionText || '',
         summaryYou: byN.get(p.questionNumber)?.summaryYou || 'You shared your take.',
         summaryThem: byN.get(p.questionNumber)?.summaryThem || 'They shared theirs.',
       }));
