@@ -104,22 +104,25 @@ describe('getPartnerProfile access control', () => {
 });
 
 describe('getPartnerProfile payload', () => {
-  it('returns the contract shape for a participant, with archetype, facets, and showcase answers — and never leaks summary/numerology', async () => {
+  it('returns the contract shape for a participant, with archetype and facets — and never leaks summary/numerology or the partner\'s written answers', async () => {
     Match.findOne.mockReturnValue(populateLean(matchDoc()));
     PersonalityAnalysis.findOne.mockReturnValue(sortLean(completedAnalysis()));
+    // Even if the discover showcase util were to return verbatim answers, the
+    // partner-profile endpoint must not surface them. Stub it so we can assert
+    // it is not consulted and none of its text reaches the payload.
     DiscoverService._getShowcaseAnswers.mockResolvedValue([
       {
         questionText: 'What does a perfect Sunday look like?',
         dimension: 'lifestyle_rhythm',
         depthLevel: 'surface',
-        answer: 'Slow breakfast, long walk.',
+        answer: 'PRIVATE-WRITTEN-ANSWER-ONE',
         questionType: 'text',
       },
       {
         questionText: 'What makes you feel safe with someone?',
         dimension: 'emotional_vulnerability',
         depthLevel: 'moderate',
-        answer: 'When they remember the small things.',
+        answer: 'PRIVATE-WRITTEN-ANSWER-TWO',
         questionType: 'text',
       },
     ]);
@@ -150,21 +153,21 @@ describe('getPartnerProfile payload', () => {
       { key: 'adventurousness', title: 'Adventurousness', score: 74 },
     ]);
 
-    // Showcase answers reuse the cached discover util (up to 6), trimmed to
-    // questionText/answer pairs per the contract.
-    expect(DiscoverService._getShowcaseAnswers).toHaveBeenCalledWith(PARTNER_ID, 6);
-    expect(result.partner.showcaseAnswers).toEqual([
-      { questionText: 'What does a perfect Sunday look like?', answer: 'Slow breakfast, long walk.' },
-      { questionText: 'What makes you feel safe with someone?', answer: 'When they remember the small things.' },
-    ]);
+    // PRIVACY: the partner's verbatim written answers ("showcase answers") must
+    // NOT be returned — the field is gone and the util is never consulted.
+    expect(result.partner.showcaseAnswers).toBeUndefined();
+    expect(DiscoverService._getShowcaseAnswers).not.toHaveBeenCalled();
 
-    // PRIVACY: no `summary` or `numerology` keys (or their contents) anywhere.
+    // PRIVACY: no `summary`/`numerology`/showcase keys (or their contents) anywhere.
     const json = JSON.stringify(result);
     expect(json).not.toContain('"summary"');
     expect(json).not.toContain('"numerology"');
+    expect(json).not.toContain('"showcaseAnswers"');
     expect(json).not.toContain('PRIVATE-SUMMARY-TEXT');
     expect(json).not.toContain('PRIVATE-NUMEROLOGY-TEXT');
     expect(json).not.toContain('PRIVATE-FACET-PROSE');
+    expect(json).not.toContain('PRIVATE-WRITTEN-ANSWER-ONE');
+    expect(json).not.toContain('PRIVATE-WRITTEN-ANSWER-TWO');
     expect(json).not.toContain('lifePathNumber');
   });
 

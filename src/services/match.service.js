@@ -806,13 +806,14 @@ Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overal
 
   /**
    * Returns the match partner's profile depth: identity basics, voice intro,
-   * stage-gated photos, personality archetype + facet scores, and showcase
-   * answers. Match-scoped: only a participant of an ACTIVE match can view it
-   * (blocked pairs are archived on block, so they 404 here like elsewhere).
+   * stage-gated photos, and personality archetype + facet scores. Match-scoped:
+   * only a participant of an ACTIVE match can view it (blocked pairs are
+   * archived on block, so they 404 here like elsewhere).
    *
-   * PRIVACY: never exposes the analysis `summary`, `numerology`, or raw
-   * answer history — only archetype, facet key/title/score, and the same
-   * showcase answers discover already serves.
+   * PRIVACY: never exposes the analysis `summary`, `numerology`, the partner's
+   * raw/showcase written answers, or raw answer history — only archetype and
+   * facet key/title/score. The "About [person]" page must never surface a
+   * partner's verbatim question responses.
    */
   static async getPartnerProfile(userId, matchId) {
     const match = await Match.findOne({
@@ -902,13 +903,11 @@ Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overal
       }));
     }
 
-    // Showcase answers: reuse the cached discover util, trimmed to the contract
-    const DiscoverService = require('./discover.service');
-    const showcase = await DiscoverService._getShowcaseAnswers(partner._id, 6);
-    const showcaseAnswers = (showcase || []).map((s) => ({
-      questionText: s.questionText,
-      answer: s.answer,
-    }));
+    // PRIVACY: the partner's verbatim written answers ("showcase answers") are
+    // deliberately NOT returned here. The "About [person]" page may only surface
+    // derived/abstract signals (archetype, facet scores, voice). Verbatim
+    // responses are exposed elsewhere via synthesized summaries (answer-sync),
+    // never as raw text on this endpoint.
 
     return {
       partner: {
@@ -929,7 +928,6 @@ Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overal
         archetype,
         facets,
         questionsAnswered: partner.questionsAnswered || 0,
-        showcaseAnswers,
       },
     };
   }

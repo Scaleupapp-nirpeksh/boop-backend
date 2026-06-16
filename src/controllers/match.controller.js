@@ -45,7 +45,7 @@ const getMatchById = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get match partner's profile depth (archetype, facets, showcase answers)
+ * @desc    Get match partner's profile depth (archetype, facets — no raw answers)
  * @route   GET /api/v1/matches/:matchId/partner
  * @access  Private (requires complete profile)
  */
