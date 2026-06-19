@@ -11,15 +11,6 @@ const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS, 10) || 3;
 const OTP_RATE_LIMIT_SECONDS = parseInt(process.env.OTP_RATE_LIMIT_SECONDS, 10) || 60;
 const OTP_LENGTH = parseInt(process.env.OTP_LENGTH, 10) || 6;
 
-// App Store / Play review access: a single allow-listed phone number authenticates
-// with a fixed OTP, since reviewers cannot receive an SMS. Disabled unless BOTH
-// REVIEWER_PHONE and REVIEWER_OTP are set in the environment. Remove the env vars
-// after the app is approved to deactivate this path. No secret is committed.
-const REVIEWER_PHONE = process.env.REVIEWER_PHONE || '';
-const REVIEWER_OTP = process.env.REVIEWER_OTP || '';
-const reviewerBypassEnabled = () => REVIEWER_PHONE !== '' && REVIEWER_OTP !== '';
-const isReviewerPhone = (phone) => reviewerBypassEnabled() && phone === REVIEWER_PHONE;
-
 class AuthService {
   /**
    * Send OTP to a phone number
@@ -33,17 +24,6 @@ class AuthService {
       const error = new Error('Invalid phone number format. Use E.164 format (e.g., +919876543210)');
       error.statusCode = 400;
       throw error;
-    }
-
-    // App Store review access: no-op for the allow-listed reviewer number
-    // (skip SMS + rate limit). verifyOTP accepts the fixed REVIEWER_OTP.
-    if (isReviewerPhone(phone)) {
-      logger.info('Reviewer access: sendOTP no-op for review account');
-      return {
-        message: 'OTP sent successfully',
-        phone,
-        expiresIn: OTP_EXPIRY_MINUTES * 60,
-      };
     }
 
     // Rate limit: check if OTP was sent in the last OTP_RATE_LIMIT_SECONDS
@@ -101,30 +81,6 @@ class AuthService {
    * @returns {Promise<{ user: object, accessToken: string, refreshToken: string, isNewUser: boolean }>}
    */
   static async verifyOTP(phone, code) {
-    // App Store review access: the allow-listed reviewer number authenticates
-    // with the fixed REVIEWER_OTP (no OTP document needed).
-    if (isReviewerPhone(phone)) {
-      if (code !== REVIEWER_OTP) {
-        const error = new Error('Invalid OTP. Please try again.');
-        error.statusCode = 400;
-        throw error;
-      }
-      let isNewUser = false;
-      let user = await User.findOne({ phone });
-      if (!user) {
-        user = await User.create({ phone, phoneVerified: true });
-        isNewUser = true;
-      } else {
-        user.phoneVerified = true;
-      }
-      const { accessToken, refreshToken } = generateTokenPair(user._id.toString());
-      const salt = await bcrypt.genSalt(10);
-      user.refreshToken = await bcrypt.hash(refreshToken, salt);
-      await user.save();
-      logger.info('Reviewer access: authenticated review account');
-      return { user, accessToken, refreshToken, isNewUser };
-    }
-
     // Find the most recent non-verified OTP for this phone
     const otpDoc = await OTP.findOne({
       phone,

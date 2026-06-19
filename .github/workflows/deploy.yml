@@ -50,7 +50,7 @@ jobs:
               "set -e",
               "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && git fetch origin && git checkout main && git pull origin main'\''",
               "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && npm install --omit=dev --no-audit --no-fund'\''",
-              "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && (grep -q ^REVIEWER_PHONE= .env || echo REVIEWER_PHONE=${{ secrets.REVIEWER_PHONE }} >> .env) && (grep -q ^REVIEWER_OTP= .env || echo REVIEWER_OTP=${{ secrets.REVIEWER_OTP }} >> .env)'\''",
+              "sudo -u ubuntu bash -c '\''cd /home/ubuntu/boop-backend && sed -i \"/^REVIEWER_PHONE=/d;/^REVIEWER_OTP=/d\" .env'\''",
               "sudo -u ubuntu bash -c '\''pm2 restart boop-backend --update-env && pm2 save'\'' 2>/dev/null || true",
               "sleep 5",
               "curl -sf http://localhost:3000/api/v1/health"
