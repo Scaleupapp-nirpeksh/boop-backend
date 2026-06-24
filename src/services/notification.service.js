@@ -39,7 +39,7 @@ class NotificationService {
         const { getNotificationQueue } = require('../config/queue');
         const queue = getNotificationQueue();
         if (queue) {
-          await queue.add('sendPush', {
+          await queue.add({
             notificationId: notification._id.toString(),
             userId: userId.toString(),
             title,
