@@ -412,7 +412,10 @@ class GameService {
       throw error;
     }
 
-    const games = await Game.find({ matchId, status: 'completed' }).lean();
+    // Newest games first so the freshest rounds win when a prompt repeats.
+    const games = await Game.find({ matchId, status: 'completed' })
+      .sort({ completedAt: -1, createdAt: -1 })
+      .lean();
 
     const inSync = [];
     const differentTakes = [];
@@ -420,11 +423,22 @@ class GameService {
     let roundsCompared = 0;
     let sameCount = 0;
 
+    // The same prompt can come up in two different game sessions — only the
+    // most recent occurrence should appear (games are sorted newest-first).
+    const seenPrompts = new Set();
+
     const resolveWYR = (prompt, raw) => {
-      const a = (raw || '').trim();
+      const a = String(raw || '').trim();
       if (a === 'A') return prompt.optionA || 'A';
       if (a === 'B') return prompt.optionB || 'B';
       return a;
+    };
+
+    // Intimacy Spectrum (1–10): turn a rating into words, never numbers.
+    const spectrumWord = (n) => {
+      if (n <= 4) return 'more guarded';
+      if (n <= 6) return 'somewhere in the middle';
+      return 'all in';
     };
 
     for (const game of games) {
@@ -436,9 +450,21 @@ class GameService {
         const promptText = round.prompt?.text;
         if (!mine || !theirs || !promptText) continue;
 
+        // Dedupe on full round identity (WYR prompt text is generic, so the
+        // options are part of the key).
+        const dedupeKey = [
+          game.gameType,
+          promptText,
+          round.prompt?.optionA || '',
+          round.prompt?.optionB || '',
+        ].join('|');
+        if (seenPrompts.has(dedupeKey)) continue;
+        seenPrompts.add(dedupeKey);
+
         if (game.gameType === GAME_TYPES.WOULD_YOU_RATHER) {
           const you = resolveWYR(round.prompt, mine.answer);
           const them = resolveWYR(round.prompt, theirs.answer);
+          if (!you || !them) continue;
           roundsCompared += 1;
           if (you.toLowerCase() === them.toLowerCase()) {
             sameCount += 1;
@@ -447,8 +473,9 @@ class GameService {
             differentTakes.push({ gameType: game.gameType, prompt: promptText, you, them });
           }
         } else if (game.gameType === GAME_TYPES.NEVER_HAVE_I_EVER) {
-          const you = (mine.answer || '').trim().toLowerCase();
-          const them = (theirs.answer || '').trim().toLowerCase();
+          const you = String(mine.answer || '').trim().toLowerCase();
+          const them = String(theirs.answer || '').trim().toLowerCase();
+          if (!['i have', 'never'].includes(you) || !['i have', 'never'].includes(them)) continue;
           roundsCompared += 1;
           const youHave = you === 'i have';
           const themHave = them === 'i have';
@@ -468,7 +495,35 @@ class GameService {
               them: themHave ? 'I have' : 'Never',
             });
           }
+        } else if (game.gameType === GAME_TYPES.INTIMACY_SPECTRUM) {
+          const you = parseInt(String(mine.answer || '').trim(), 10);
+          const them = parseInt(String(theirs.answer || '').trim(), 10);
+          if (Number.isNaN(you) || Number.isNaN(them)) continue;
+          roundsCompared += 1;
+          if (Math.abs(you - them) <= 2) {
+            sameCount += 1;
+            inSync.push({
+              gameType: game.gameType,
+              prompt: promptText,
+              answer: 'In the same place',
+            });
+          } else {
+            const youWord = spectrumWord(you);
+            const themWord = spectrumWord(them);
+            // Only surface it when the words actually differ — "you're all in,
+            // they're all in" would read as nonsense.
+            if (youWord !== themWord) {
+              differentTakes.push({
+                gameType: game.gameType,
+                prompt: promptText,
+                you: youWord,
+                them: themWord,
+              });
+            }
+          }
         }
+        // Free-text games (What Would You Do, Dream Board, Two Truths & A Lie,
+        // Blind Reveal) can't be compared mechanically — skipped by design.
       }
     }
 
