@@ -60,4 +60,11 @@ router.get(
   gameController.getGamesForMatch
 );
 
+// Game chemistry — answer alignment across all completed games of a match
+router.get(
+  '/match/:matchId/chemistry',
+  validateParams(matchIdParamSchema),
+  gameController.getMatchChemistry
+);
+
 module.exports = router;

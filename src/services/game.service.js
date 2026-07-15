@@ -392,6 +392,97 @@ class GameService {
     }));
   }
 
+  /**
+   * "Game chemistry" — compare both players' answers across every completed
+   * game of this match. Returns qualitative material the app renders warmly:
+   * where they answered the same, where they differ, and Never-Have-I-Ever
+   * prompts neither has done (things to try together). Only game types with
+   * directly comparable answers participate (Would You Rather, Never Have I
+   * Ever); free-text games are skipped.
+   */
+  static async getMatchChemistry(userId, matchId) {
+    const match = await Match.findOne({
+      _id: matchId,
+      users: userId,
+    });
+
+    if (!match) {
+      const error = new Error('Match not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const games = await Game.find({ matchId, status: 'completed' }).lean();
+
+    const inSync = [];
+    const differentTakes = [];
+    const tryTogether = [];
+    let roundsCompared = 0;
+    let sameCount = 0;
+
+    const resolveWYR = (prompt, raw) => {
+      const a = (raw || '').trim();
+      if (a === 'A') return prompt.optionA || 'A';
+      if (a === 'B') return prompt.optionB || 'B';
+      return a;
+    };
+
+    for (const game of games) {
+      for (const round of game.rounds || []) {
+        const responses = round.responses || [];
+        if (responses.length < 2) continue;
+        const mine = responses.find((r) => String(r.userId) === String(userId));
+        const theirs = responses.find((r) => String(r.userId) !== String(userId));
+        const promptText = round.prompt?.text;
+        if (!mine || !theirs || !promptText) continue;
+
+        if (game.gameType === GAME_TYPES.WOULD_YOU_RATHER) {
+          const you = resolveWYR(round.prompt, mine.answer);
+          const them = resolveWYR(round.prompt, theirs.answer);
+          roundsCompared += 1;
+          if (you.toLowerCase() === them.toLowerCase()) {
+            sameCount += 1;
+            inSync.push({ gameType: game.gameType, prompt: promptText, answer: you });
+          } else {
+            differentTakes.push({ gameType: game.gameType, prompt: promptText, you, them });
+          }
+        } else if (game.gameType === GAME_TYPES.NEVER_HAVE_I_EVER) {
+          const you = (mine.answer || '').trim().toLowerCase();
+          const them = (theirs.answer || '').trim().toLowerCase();
+          roundsCompared += 1;
+          const youHave = you === 'i have';
+          const themHave = them === 'i have';
+          if (youHave === themHave) {
+            sameCount += 1;
+            if (youHave) {
+              inSync.push({ gameType: game.gameType, prompt: promptText, answer: 'Both have' });
+            } else {
+              // Neither has done it — a shared first waiting to happen.
+              tryTogether.push({ prompt: promptText });
+            }
+          } else {
+            differentTakes.push({
+              gameType: game.gameType,
+              prompt: promptText,
+              you: youHave ? 'I have' : 'Never',
+              them: themHave ? 'I have' : 'Never',
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      matchId,
+      gamesPlayed: games.length,
+      roundsCompared,
+      sameCount,
+      inSync: inSync.slice(0, 4),
+      differentTakes: differentTakes.slice(0, 4),
+      tryTogether: tryTogether.slice(0, 3),
+    };
+  }
+
   static async cancelGame(userId, gameId) {
     const game = await Game.findOne({
       _id: gameId,

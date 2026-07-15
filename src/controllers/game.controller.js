@@ -199,6 +199,26 @@ const getGamesForMatch = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Game chemistry — how both players' answers line up across all
+ *          completed games of a match
+ * @route   GET /api/v1/games/match/:matchId/chemistry
+ * @access  Private (requires complete profile)
+ */
+const getMatchChemistry = asyncHandler(async (req, res) => {
+  const result = await GameService.getMatchChemistry(
+    req.user._id,
+    req.params.matchId
+  );
+
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: 'Game chemistry',
+    data: result,
+  });
+});
+
+/**
  * @desc    Cancel a game
  * @route   PATCH /api/v1/games/:gameId/cancel
  * @access  Private (requires complete profile)
@@ -244,5 +264,6 @@ module.exports = {
   setReadyState,
   submitResponse,
   getGamesForMatch,
+  getMatchChemistry,
   cancelGame,
 };
