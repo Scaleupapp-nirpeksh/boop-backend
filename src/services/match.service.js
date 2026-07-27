@@ -20,8 +20,16 @@ class MatchService {
    * Lists the user's matches, optionally filtered by stage.
    * Returns matches sorted by most recent first, with other user populated.
    */
-  static async getMatches(userId, { stage = null, page = 1, limit = 20 } = {}) {
+  static async getMatches(userId, { stage = null, page = 1, limit = 20, origin = null } = {}) {
     const query = { users: userId, isActive: true };
+
+    // Origin filter: default lists exclude Us pairs (old clients unaffected);
+    // origin=pair returns pairs PLUS discover matches that merged into Us.
+    if (origin === 'pair') {
+      query.$or = [{ origin: 'pair' }, { usLinked: true }];
+    } else {
+      query.origin = { $ne: 'pair' };
+    }
 
     if (stage) {
       query.stage = stage;
@@ -48,11 +56,14 @@ class MatchService {
       // Determine photo visibility based on stage
       const photosRevealed =
         match.stage === CONNECTION_STAGES.REVEALED ||
-        match.stage === CONNECTION_STAGES.DATING;
+        match.stage === CONNECTION_STAGES.DATING ||
+        match.stage === CONNECTION_STAGES.PAIRED;
 
       return {
         matchId: match._id,
         stage: match.stage,
+        origin: match.origin || 'discover',
+        usLinked: match.usLinked || false,
         compatibilityScore: match.compatibilityScore,
         matchTier: match.matchTier,
         comfortScore: match.comfortScore,
@@ -102,7 +113,8 @@ class MatchService {
 
     const photosRevealed =
       match.stage === CONNECTION_STAGES.REVEALED ||
-      match.stage === CONNECTION_STAGES.DATING;
+      match.stage === CONNECTION_STAGES.DATING ||
+      match.stage === CONNECTION_STAGES.PAIRED;
 
     return {
       matchId: match._id,
@@ -136,6 +148,12 @@ class MatchService {
     if (!match) {
       const error = new Error('Match not found');
       error.statusCode = 404;
+      throw error;
+    }
+
+    if (match.origin === 'pair') {
+      const error = new Error('Stages do not apply to Us pairs.');
+      error.statusCode = 400;
       throw error;
     }
 
@@ -289,6 +307,12 @@ class MatchService {
     if (!match) {
       const error = new Error('Match not found');
       error.statusCode = 404;
+      throw error;
+    }
+
+    if (match.origin === 'pair') {
+      const error = new Error('Reveal does not apply to Us pairs.');
+      error.statusCode = 400;
       throw error;
     }
 
@@ -855,7 +879,8 @@ Return JSON: { "narratives": { "dimension_key": "narrative text", ... }, "overal
     // once the comfort-reveal has happened (REVEALED or DATING stage).
     const photosRevealed =
       match.stage === CONNECTION_STAGES.REVEALED ||
-      match.stage === CONNECTION_STAGES.DATING;
+      match.stage === CONNECTION_STAGES.DATING ||
+      match.stage === CONNECTION_STAGES.PAIRED;
 
     const [audioUrl, blurredUrl, silhouetteUrl, clearUrl] = await Promise.all([
       UploadService.getAccessibleUrl(partner.voiceIntro?.audioUrl || null),

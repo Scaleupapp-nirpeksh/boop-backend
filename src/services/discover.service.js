@@ -59,6 +59,19 @@ class DiscoverService {
     const blockedIds = await SafetyService.getBlockedIdSet(userId);
     blockedIds.forEach((id) => excludeIds.push(id));
 
+    // Exclude anyone this user already shares an ACTIVE match with (any
+    // origin) — you shouldn't be able to "discover" your existing match or
+    // your Us pair.
+    const activeMatches = await Match.find(
+      { users: userId, isActive: true },
+      { users: 1 }
+    ).lean();
+    for (const m of activeMatches) {
+      for (const u of m.users) {
+        if (String(u) !== String(userId)) excludeIds.push(u);
+      }
+    }
+
     // 2. Build gender preference filter (bidirectional)
     const genderFilter = this._buildGenderFilter(currentUser);
 
@@ -69,6 +82,7 @@ class DiscoverService {
     const query = {
       _id: { $nin: excludeIds },
       profileStage: 'ready',
+      discoverable: { $ne: false },
       isActive: true,
       isBanned: false,
       ...genderFilter,
@@ -388,6 +402,7 @@ class DiscoverService {
     return User.countDocuments({
       _id: { $nin: excludeIds },
       profileStage: 'ready',
+      discoverable: { $ne: false },
       isActive: true,
       isBanned: false,
       ...genderFilter,

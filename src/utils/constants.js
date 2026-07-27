@@ -36,6 +36,8 @@ const CONNECTION_STAGES = {
   REVEALED: 'revealed',
   DATING: 'dating',
   ARCHIVED: 'archived',
+  // "Us" pairs — people who already know each other; outside the dating pipeline
+  PAIRED: 'paired',
 };
 
 // Valid stage transitions
@@ -48,6 +50,7 @@ const STAGE_TRANSITIONS = {
   [CONNECTION_STAGES.REVEALED]: [CONNECTION_STAGES.DATING, CONNECTION_STAGES.ARCHIVED],
   [CONNECTION_STAGES.DATING]: [CONNECTION_STAGES.ARCHIVED],
   [CONNECTION_STAGES.ARCHIVED]: [],
+  [CONNECTION_STAGES.PAIRED]: [CONNECTION_STAGES.ARCHIVED],
 };
 
 // Profile completion stages

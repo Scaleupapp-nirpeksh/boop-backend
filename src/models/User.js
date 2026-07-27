@@ -127,10 +127,17 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Whether this user appears in Discover. Pair-only accounts (joined via
+    // an "Us" invite) default to false until they opt in to dating.
+    discoverable: {
+      type: Boolean,
+      default: true,
+    },
+
     profileStage: {
       type: String,
       enum: {
-        values: ['incomplete', 'voice_pending', 'questions_pending', 'preview', 'ready'],
+        values: ['incomplete', 'voice_pending', 'questions_pending', 'preview', 'ready', 'pair_only'],
         message: '{VALUE} is not a valid profile stage',
       },
       default: 'incomplete',

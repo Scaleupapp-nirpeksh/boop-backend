@@ -37,6 +37,21 @@ const matchSchema = new mongoose.Schema(
       unique: true,
     },
 
+    // Where this match came from: normal discovery, or an "Us" pair code
+    // between two people who already know each other.
+    origin: {
+      type: String,
+      enum: ['discover', 'pair'],
+      default: 'discover',
+    },
+
+    // A discover-origin match that ALSO became an Us pair (code redeemed
+    // between two already-matched people) — gains the Us view.
+    usLinked: {
+      type: Boolean,
+      default: false,
+    },
+
     // Current stage in the connection pipeline
     stage: {
       type: String,

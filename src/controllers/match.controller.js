@@ -9,10 +9,11 @@ const MatchService = require('../services/match.service');
  * @access  Private (requires complete profile)
  */
 const getMatches = asyncHandler(async (req, res) => {
-  const { stage, page, limit } = req.query;
+  const { stage, page, limit, origin } = req.query;
 
   const result = await MatchService.getMatches(req.user._id, {
     stage: stage || null,
+    origin: origin || null,
     page: page ? parseInt(page, 10) : 1,
     limit: limit ? parseInt(limit, 10) : 20,
   });

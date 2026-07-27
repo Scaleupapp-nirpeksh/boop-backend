@@ -146,7 +146,10 @@ const requireCompleteProfile = (req, res, next) => {
     });
   }
 
-  if (req.user.profileStage !== 'ready') {
+  // 'pair_only' accounts (joined via an Us invite) get full access to their
+  // pair-scoped features — chat, games, questions. Dating surfaces gate
+  // separately via requireOnboarded, which does NOT accept pair_only.
+  if (req.user.profileStage !== 'ready' && req.user.profileStage !== 'pair_only') {
     return res.status(403).json({
       success: false,
       statusCode: 403,

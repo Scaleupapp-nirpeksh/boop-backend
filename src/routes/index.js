@@ -16,6 +16,7 @@ const publicRoutes = require('./public.routes');
 const safetyRoutes = require('./safety.routes');
 const adminRoutes = require('./admin.routes');
 const legalRoutes = require('./legal.routes');
+const pairRoutes = require('./pair.routes');
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -31,6 +32,7 @@ router.use('/public', publicRoutes);
 router.use('/safety', safetyRoutes);
 router.use('/admin', adminRoutes);
 router.use('/legal', legalRoutes);
+router.use('/pairs', pairRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
