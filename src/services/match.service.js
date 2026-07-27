@@ -119,6 +119,8 @@ class MatchService {
     return {
       matchId: match._id,
       stage: match.stage,
+      origin: match.origin || 'discover',
+      usLinked: match.usLinked || false,
       compatibilityScore: match.compatibilityScore,
       matchTier: match.matchTier,
       dimensionScores: match.dimensionScores,
