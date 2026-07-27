@@ -41,8 +41,9 @@ describe('Constants', () => {
   });
 
   describe('CONNECTION_STAGES', () => {
-    it('has 8 stages', () => {
-      expect(Object.keys(CONNECTION_STAGES)).toHaveLength(8);
+    it('has 9 stages (incl. PAIRED for Us)', () => {
+      expect(Object.keys(CONNECTION_STAGES)).toHaveLength(9);
+      expect(CONNECTION_STAGES.PAIRED).toBe('paired');
     });
 
     it('every stage has transition rules', () => {
