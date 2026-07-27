@@ -7,6 +7,31 @@ const logger = require('../utils/logger');
  * Extracts Bearer token from Authorization header, verifies JWT,
  * finds the user, and attaches to req.user.
  */
+/**
+ * Best-effort authentication for endpoints that must never fail on a dead
+ * token (e.g. logout). Attaches req.user when the token is valid; otherwise
+ * continues with req.user undefined instead of returning 401 — a client
+ * logging out with an expired session should still get a 200.
+ */
+const authenticateLenient = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      if (token) {
+        const decoded = verifyAccessToken(token);
+        const user = await User.findById(decoded.userId);
+        if (user && user.isActive && !user.isBanned) {
+          req.user = user;
+        }
+      }
+    }
+  } catch (error) {
+    // Invalid/expired token — proceed unauthenticated.
+  }
+  next();
+};
+
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -192,4 +217,10 @@ const requireOnboarded = (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, optionalAuth, requireCompleteProfile, requireOnboarded };
+module.exports = {
+  authenticate,
+  optionalAuth,
+  requireCompleteProfile,
+  requireOnboarded,
+  authenticateLenient,
+};

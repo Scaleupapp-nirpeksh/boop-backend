@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/auth.controller');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate, authenticateLenient } = require('../middleware/auth.middleware');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { validate, sendOTPSchema, verifyOTPSchema, refreshTokenSchema } = require('../validators/auth.validator');
 
@@ -11,7 +11,7 @@ router.post('/verify-otp', authLimiter, validate(verifyOTPSchema), authControlle
 router.post('/refresh-token', validate(refreshTokenSchema), authController.refreshToken);
 
 // Protected routes
-router.post('/logout', authenticate, authController.logout);
+router.post('/logout', authenticateLenient, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 
 module.exports = router;

@@ -73,7 +73,11 @@ const refreshToken = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const logout = asyncHandler(async (req, res) => {
-  await AuthService.logout(req.user._id);
+  // Lenient: token may be expired/absent — logging out while logged out is
+  // still a success (and must never 401, or clients loop; see build 33).
+  if (req.user) {
+    await AuthService.logout(req.user._id);
+  }
 
   res.status(200).json({
     success: true,
