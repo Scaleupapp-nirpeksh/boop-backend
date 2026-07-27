@@ -631,8 +631,14 @@ class ProfileService {
     user.datingOptIn = !!enabled;
     if (!enabled) {
       user.discoverable = false;
-    } else if (['preview', 'ready'].includes(user.profileStage)) {
-      user.discoverable = true;
+    } else {
+      if (user.profileStage === 'pair_only') {
+        // Promote immediately if the dating profile already qualifies.
+        await this._checkAndAdvanceStage(user);
+      }
+      if (['preview', 'ready'].includes(user.profileStage)) {
+        user.discoverable = true;
+      }
     }
     await user.save();
 
