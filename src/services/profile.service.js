@@ -593,18 +593,54 @@ class ProfileService {
     const hasMinPhotos = photoCount >= 3;
     const answered = user.questionsAnswered || 0;
 
-    if (user.profileStage === 'incomplete' && hasBasicInfo && answered >= 8) {
+    const wantsDating = user.datingOptIn !== false;
+    if (
+      (user.profileStage === 'incomplete' ||
+        (user.profileStage === 'pair_only' && wantsDating)) &&
+      hasBasicInfo && answered >= 8
+    ) {
       user.profileStage = 'preview';
-      logger.info(`User ${user._id} stage: incomplete → preview (${answered} answers)`);
+      logger.info(`User ${user._id} stage: → preview (${answered} answers)`);
     }
     if (user.profileStage === 'preview' && hasVoice && hasMinPhotos) {
       user.profileStage = 'ready';
+      if (wantsDating) user.discoverable = true;
       logger.info(`User ${user._id} stage: preview → ready`);
     }
     // Legacy safety: voice+photos+8 answers ⇒ ready from any mid stage
     if (['voice_pending', 'questions_pending'].includes(user.profileStage) && hasVoice && hasMinPhotos && answered >= 8) {
       user.profileStage = 'ready';
     }
+  }
+
+  /**
+   * Turn the dating side of UnMutee on/off ("Show me in Discover").
+   * Off: hidden from Discover immediately. On: visible again if the dating
+   * profile qualifies (preview/ready); pair-only users flip datingOptIn so
+   * the stage machine can promote them as they complete the profile.
+   */
+  static async setDatingMode(userId, enabled) {
+    const User = require('../models/User');
+    const user = await User.findById(userId);
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    user.datingOptIn = !!enabled;
+    if (!enabled) {
+      user.discoverable = false;
+    } else if (['preview', 'ready'].includes(user.profileStage)) {
+      user.discoverable = true;
+    }
+    await user.save();
+
+    return {
+      datingOptIn: user.datingOptIn,
+      discoverable: user.discoverable,
+      profileStage: user.profileStage,
+    };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────

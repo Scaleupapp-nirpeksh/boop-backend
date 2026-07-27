@@ -200,7 +200,19 @@ const deleteAccount = asyncHandler(async (req, res) => {
   });
 });
 
+const setDatingMode = asyncHandler(async (req, res) => {
+  const ProfileService = require('../services/profile.service');
+  const result = await ProfileService.setDatingMode(req.user._id, req.body.enabled === true);
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: result.datingOptIn ? 'Dating mode on' : 'Dating mode off',
+    data: result,
+  });
+});
+
 module.exports = {
+  setDatingMode,
   getProfile,
   updateBasicInfo,
   uploadVoiceIntro,

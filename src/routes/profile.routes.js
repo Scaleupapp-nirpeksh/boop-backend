@@ -34,6 +34,9 @@ router.delete('/photos/:index', profileController.deletePhoto);
 // PUT /profile/fcm-token — Update FCM push notification token
 router.put('/fcm-token', profileController.updateFCMToken);
 
+// PUT /profile/dating-mode — "Show me in Discover" on/off (Us pair-only opt-in)
+router.put('/dating-mode', profileController.setDatingMode);
+
 // PUT /profile/notification-preferences — Update mute / quiet-hour preferences
 router.put(
   '/notification-preferences',

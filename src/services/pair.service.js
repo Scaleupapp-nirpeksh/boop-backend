@@ -153,7 +153,7 @@ class PairService {
       'firstName isActive isBanned photos'
     );
     const redeemer = await User.findById(userId).select(
-      'firstName profileStage discoverable'
+      'firstName profileStage discoverable datingOptIn'
     );
     if (!inviter || !inviter.isActive || inviter.isBanned) throw invalidCode();
 
@@ -270,6 +270,7 @@ class PairService {
     ) {
       redeemer.profileStage = 'pair_only';
       redeemer.discoverable = false;
+      redeemer.datingOptIn = false;
       await redeemer.save();
     }
 

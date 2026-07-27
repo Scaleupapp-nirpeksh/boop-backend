@@ -134,6 +134,14 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
 
+    // Whether this user WANTS the dating side of UnMutee. Pair-only invitees
+    // start false; flipping it on lets the profile-stage machine promote them
+    // once their dating profile qualifies.
+    datingOptIn: {
+      type: Boolean,
+      default: true,
+    },
+
     profileStage: {
       type: String,
       enum: {
